@@ -544,48 +544,42 @@ void process_snp_row(double *row, int original_sample_size, int *skipped_samples
 }
 
 
-// void standardize_snp_matrix_row(double *row, int original_sample_size, double mean, double std, int *keep_mask, double *std_row)
+
+// void standardize_snp_matrix_row(double *row, int original_sample_size,
+//                                 double mean, double std,
+//                                 int *keep_mask, double *std_row)
 // {
-//     if (std <= 0.0) {
+//     // initialize the output row
+//     for (int i = 0; i < original_sample_size; ++i) 
+//     {
+//         std_row[i] = 0.0;
+//     }
+
+//     if (std <= 0.0) 
+//     {
 //         *keep_mask = 0;
 //         return;
 //     }
 
-//     // Otherwise, mark as valid and proceed
-//     *keep_mask = 1; 
-    
+//     *keep_mask = 1;
 //     for (int i = 0; i < original_sample_size; ++i) 
 //     {
-//         if (row[i] < 0.0) 
-//         {   
-//             std_row[i] = 0.0; // Mean-imputed values standardize directly to 0.0
-//         } 
-//         else 
-//         {
-//             std_row[i] = (row[i] - mean) / std;
-//         }
+//         if (row[i] >= 0.0) std_row[i] = (row[i] - mean) / std;
 //     }
 // }
 
-void standardize_snp_matrix_row(double *row, int original_sample_size,
-                                double mean, double std,
-                                int *keep_mask, double *std_row)
+void standardize_snp_matrix_row(double *row, int original_sample_size, double mean, double std, double std_no_skipped, int *keep_mask, double *std_row)
 {
-    // Always initialize the output row
-    for (int i = 0; i < original_sample_size; ++i) 
-    {
+    for (int i = 0; i < original_sample_size; ++i)
         std_row[i] = 0.0;
-    }
 
-    if (std <= 0.0) 
-    {
+    if (std_no_skipped <= 0.0 || std <= 0.0) {
         *keep_mask = 0;
         return;
     }
 
     *keep_mask = 1;
-    for (int i = 0; i < original_sample_size; ++i) 
-    {
+    for (int i = 0; i < original_sample_size; ++i) {
         if (row[i] >= 0.0) std_row[i] = (row[i] - mean) / std;
     }
 }
@@ -620,10 +614,11 @@ void standardize_snp_matrix(folder_geno_pheno *data, double *std_matrix, int *n_
                         &data->snp_stds_no_skipped_samples[j]);
 
         standardize_snp_matrix_row(row, data->original_sample_size, 
-                                data->snp_means_including_skipped_samples[j], 
-                                data->snp_stds_including_skipped_samples[j], 
-                                &data->snp_keep_mask[j],
-                                std_matrix + j * data->original_sample_size);
+                        data->snp_means_including_skipped_samples[j], 
+                        data->snp_stds_including_skipped_samples[j], 
+                        data->snp_stds_no_skipped_samples[j],   
+                        &data->snp_keep_mask[j],
+                        std_matrix + j * data->original_sample_size);
         
         if(data->snp_keep_mask[j])
         {
@@ -758,34 +753,37 @@ double *compute_GRM(const double *std_matrix, int snp_size, int original_sample_
     double *GRM = (double *)calloc((size_t)original_sample_size * original_sample_size, sizeof(double));
     if (GRM == NULL) return NULL;
 
-    int m = n_valid_snps;
 
     if (sample_fraction == 1.0) {
+
+        double *valid_std_matrix = extract_subset_std_matrix(std_matrix, original_sample_size, valid_snp_indices, n_valid_snps);
+
         cblas_dgemm(CblasRowMajor, 
                     CblasTrans, 
                     CblasNoTrans,
                     original_sample_size, 
                     original_sample_size, 
-                    m,
+                    n_valid_snps,
                     1.0,
-                    std_matrix, 
+                    valid_std_matrix, 
                     original_sample_size,
-                    std_matrix, 
+                    valid_std_matrix, 
                     original_sample_size,
                     0.0,
                     GRM, 
                     original_sample_size);
 
-        double inv = 1.0 / (double)m;
+        double inv = 1.0 / (double)n_valid_snps;
         for (int i = 0; i < original_sample_size * original_sample_size; i++) 
         {
             GRM[i] *= inv;
         }
+        free(valid_std_matrix);
         return GRM;
     }
 
     int sampled_snp_size = 0;
-    int *sampled_snp_indices = sample_snp_row_indices_from_valid(valid_snp_indices, m, sample_fraction, &sampled_snp_size, 42);
+    int *sampled_snp_indices = sample_snp_row_indices_from_valid(valid_snp_indices, n_valid_snps, sample_fraction, &sampled_snp_size, 42);
 
     if (sampled_snp_indices == NULL || sampled_snp_size <= 0) 
     {
