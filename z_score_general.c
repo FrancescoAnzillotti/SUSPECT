@@ -1581,13 +1581,13 @@ int main(int argc, char *argv[]) {
 
 
     snprintf(gemma_cmd1, sizeof(gemma_cmd1), 
-        " cd %s && /home/francesco/anaconda3/envs/gwas_test/bin/gemma -g %s -p %s -gk 2 -maf 0 -miss 1 -o kinship ",
+        " cd %s && /home/francesco/anaconda3/envs/gwas_test/bin/gemma -g %s -p %s -gk 2 -maf 0 -miss 1 -o kinship > /dev/null 2>&1",
         target_dir, matrix_abs, outcome_abs);
     //snprintf(gemma_cmd2, sizeof(gemma_cmd2), 
     //    "cd %s && /home/francesco/anaconda3/envs/gwas_test/bin/gemma -g ./matrix.txt -p ./outcome_vector.txt -a ./anno.subset.txt -k output/kinship.sXX.txt -lmm 4 -n 1 -o gemma_output > /dev/null 2>&1", target_dir); // ");
 
     snprintf(gemma_cmd2, sizeof(gemma_cmd2), 
-        "cd %s && /home/francesco/anaconda3/envs/gwas_test/bin/gemma -g %s -p %s -k output/kinship.sXX.txt -maf 0 -miss 1 -lmm 4 -n 1 -o gemma_output ",
+        "cd %s && /home/francesco/anaconda3/envs/gwas_test/bin/gemma -g %s -p %s -k output/kinship.sXX.txt -maf 0 -miss 1 -lmm 4 -n 1 -o gemma_output > /dev/null 2>&1",
         target_dir, matrix_abs, outcome_abs);
 
     int result = system(gemma_cmd1);
@@ -1650,7 +1650,7 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    write_kinship(target_dir, GRM, data->original_sample_size);
+    //write_kinship(target_dir, GRM, data->original_sample_size);
 
     double *analyzed_GRM = extract_analyzed_submatrix(GRM, data->original_sample_size, data->skipped_samples, data->pruned_sample_size);
 

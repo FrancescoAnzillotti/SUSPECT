@@ -1,2 +1,5 @@
 questionnaire_data/matrix_half.txt
 questionnaire_data/outcome_half.txt
+z_score_general
+results/
+workdir/
