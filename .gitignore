@@ -3,3 +3,5 @@ questionnaire_data/outcome_half.txt
 z_score_general
 results/
 workdir/
+plot_maker.R
+plots/

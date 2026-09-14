@@ -39,7 +39,7 @@ def read_matrix(path, genotype):
         for line in f:
             if not line.strip():
                 continue
-            x = line.split()
+            x = [val.strip() for val in line.split(',')]
             meta = x[:3] if genotype else x[:1]
             values = x[3:] if genotype else x[1:]
             rows.append((meta, values))
@@ -87,7 +87,7 @@ def parse_global_logs(results_dir):
                 "zscore_relevant_snps": None, "zscore_processed_snps": None, "zscore_percentage": None,
                 "gemma_relevant_snps": None, "gemma_tested_snps": None, "gemma_percentage": None,
                 "gemma_after_zscore_relevant_snps": None, "gemma_after_zscore_tested_snps": None,
-                "gemma_time_seconds": None, "zscore_time_ms": None,
+                "gemma_time_ms": None, "zscore_time_ms": None,
                 "gemma_after_zscore_time_ms": None, "zscore_plus_gemma_time_ms": None,
                 "false_negatives_total": 0
             }
@@ -132,7 +132,7 @@ def parse_global_logs(results_dir):
                     val = float(parts[2])
                     row = get_row(folder)
                     
-                    if method == "GEMMA": row["gemma_time_seconds"] = val
+                    if method == "GEMMA": row["gemma_time_ms"] = val
                     elif method == "Z_SCORE": row["zscore_time_ms"] = val
                     elif method == "GEMMA_EXACT_AFTER_ZSCORE": row["gemma_after_zscore_time_ms"] = val
                     elif method == "ZSCORE+GEMMA": row["zscore_plus_gemma_time_ms"] = val
@@ -165,7 +165,7 @@ def compute_metrics(params, log_data, input_snps):
         "zscore_relevant_snps", "zscore_processed_snps", "zscore_percentage",
         "gemma_relevant_snps", "gemma_tested_snps", "gemma_percentage",
         "gemma_after_zscore_relevant_snps", "gemma_after_zscore_tested_snps",
-        "gemma_time_seconds", "zscore_time_ms", "gemma_after_zscore_time_ms",
+        "gemma_time_ms", "zscore_time_ms", "gemma_after_zscore_time_ms",
         "zscore_plus_gemma_time_ms"
     ]
     for k in keys:
@@ -195,10 +195,10 @@ def compute_metrics(params, log_data, input_snps):
     else:
         row["variance_retention_percentage"] = row["variance_removed_percentage"] = None
 
-    if row["gemma_time_seconds"] is not None:
-        row["gemma_time_ms"] = row["gemma_time_seconds"] * 1000.0
-    else:
-        row["gemma_time_ms"] = None
+    # if row["gemma_time_milliseconds"] is not None:
+    #     row["gemma_time_ms"] = row["gemma_time_milliseconds"]
+    # else:
+    #     row["gemma_time_ms"] = None
 
     gemma_ms = row["gemma_time_ms"]
     if gemma_ms is not None and row["zscore_time_ms"] and row["zscore_time_ms"] > 0:
@@ -389,7 +389,7 @@ def main():
         "gemma_after_zscore_tested_snps", "gemma_after_zscore_relevant_snps",
         "gemma_candidate_retention_percentage", "gemma_candidate_reduction_percentage",
         "false_negatives_total", "false_negative_rate", "recall",
-        "gemma_time_seconds", "gemma_time_ms", "zscore_time_ms", "gemma_after_zscore_time_ms",
+        "gemma_time_milliseconds", "gemma_time_ms", "zscore_time_ms", "gemma_after_zscore_time_ms",
         "zscore_plus_gemma_time_ms", "zscore_speedup_vs_gemma", "total_pipeline_speedup_vs_gemma",
         "python_wall_time_seconds", "return_code"
     ]

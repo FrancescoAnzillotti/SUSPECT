@@ -16,7 +16,6 @@
 #include <omp.h>
 #include <limits.h> 
 
-
 #define max_rows 2000
 //#define max_snps 100000
 #define buffer_size 57344
@@ -1205,7 +1204,9 @@ void compute_z_scores(folder_geno_pheno *data, double *surprise_scores, node_z_s
 
     double reference_sample_size = (have_specs && ref_n_samples > 0) ? (double)ref_n_samples : data->original_sample_size; // fallback preserves original behavior when no baseline exists yet
 
-    double adj_thr = data->pruned_sample_size < 500?   4.56*sqrt(data->original_sample_size / reference_sample_size) : 4.56;
+    //double adj_thr = data->pruned_sample_size < 500?   4.45*sqrt(data->original_sample_size / reference_sample_size) : 4.45;
+    double adj_thr = data->pruned_sample_size < 500?   4.30*sqrt(data->original_sample_size / reference_sample_size) : 4.30;
+
 
     write_specs_if_absent(data->folder_name, data->pruned_sample_size, data->snp_size, adj_thr);    
     
@@ -1514,6 +1515,10 @@ int main(int argc, char *argv[]) {
     FILE *fn_log_file = fopen("fn_log.csv", "a");
     FILE *time_log_file = fopen("time_log.csv", "a");
 
+    setenv("OPENBLAS_NUM_THREADS", "1", 1);
+    setenv("OMP_NUM_THREADS", "1", 1);
+    setenv("OPENBLAS_CORETYPE", "Zen", 1);
+
     if (!relevant_log_file || !fn_log_file || !time_log_file) 
     {
         perror("opening log files");
@@ -1550,6 +1555,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    printf("Resolving paths for matrix and outcome files...\n");
     char matrix_abs[PATH_MAX];
     char outcome_abs[PATH_MAX];
     resolve_input_path(target_dir, matrix_path, matrix_abs, sizeof(matrix_abs));
@@ -1564,7 +1570,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-
+    printf("Reading files...\n");
     data = read_files((char *)target_dir, matrix_abs, outcome_abs, is_genotype_file, pheno_offset, &z_score_list);
     if (data == NULL) {
         fprintf(stderr, "Error: Failed to read files in %s\n", target_dir);
@@ -1581,21 +1587,23 @@ int main(int argc, char *argv[]) {
 
 
     snprintf(gemma_cmd1, sizeof(gemma_cmd1), 
-        " cd %s && /home/francesco/anaconda3/envs/gwas_test/bin/gemma -g %s -p %s -gk 2 -maf 0 -miss 1 -o kinship > /dev/null 2>&1",
+        " cd %s && ../../gemma -g %s -p %s -gk 2 -maf 0 -miss 1 -o kinship > /dev/null 2>&1",
         target_dir, matrix_abs, outcome_abs);
     //snprintf(gemma_cmd2, sizeof(gemma_cmd2), 
     //    "cd %s && /home/francesco/anaconda3/envs/gwas_test/bin/gemma -g ./matrix.txt -p ./outcome_vector.txt -a ./anno.subset.txt -k output/kinship.sXX.txt -lmm 4 -n 1 -o gemma_output > /dev/null 2>&1", target_dir); // ");
 
     snprintf(gemma_cmd2, sizeof(gemma_cmd2), 
-        "cd %s && /home/francesco/anaconda3/envs/gwas_test/bin/gemma -g %s -p %s -k output/kinship.sXX.txt -maf 0 -miss 1 -lmm 4 -n 1 -o gemma_output > /dev/null 2>&1",
+        "cd %s && ../../gemma -g %s -p %s -k output/kinship.sXX.txt -maf 0 -miss 1 -lmm 4 -n 1 -o gemma_output > /dev/null 2>&1",
         target_dir, matrix_abs, outcome_abs);
 
+    printf("Executing GEMMA kinship...\n");
     int result = system(gemma_cmd1);
     if(result == -1) {
         perror("Failed to execute gemma kinship command");
         exit(EXIT_FAILURE);
     }
     
+    printf("Executing GEMMA association testing...\n");
     result = system(gemma_cmd2);
     if(result == -1) {
         perror("Failed to execute gemma command");
@@ -1604,8 +1612,8 @@ int main(int argc, char *argv[]) {
 
     int t_gemma_end = now_seconds();
     char **gemma_relevant = read_gemma_relevant_snps(target_dir, 5.3, relevant_log_file, 0);
-    printf("Time taken for full and exact GEMMA execution: %d seconds\n\n", (t_gemma_end - t0)/1000);
-    fprintf(time_log_file, "%s\tGEMMA\t%d\ts\n", target_dir, (t_gemma_end - t0)/1000);
+    printf("Time taken for full and exact GEMMA execution: %d milliseconds\n\n", (t_gemma_end - t0));
+    fprintf(time_log_file, "%s\tGEMMA\t%d\tms\n", target_dir, (t_gemma_end - t0));
     
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1638,7 +1646,7 @@ int main(int argc, char *argv[]) {
     data->n_valid_snps = n_valid_snps;
     data->valid_snp_indices = collect_valid_snp_indices_for_GRM(data->snp_keep_mask, data->snp_size, &data->n_valid_snps);
 
-    printf("%d %d\n", data->snp_size, n_valid_snps);
+    //printf("%d %d\n", data->snp_size, n_valid_snps);
 
     // GRM uses only valid SNPs 
     double *GRM = compute_GRM(std_matrix, data->snp_size, data->original_sample_size, 1.0, data->valid_snp_indices, data->n_valid_snps);
@@ -1696,7 +1704,7 @@ int main(int argc, char *argv[]) {
     {
         char exact_after_zscore_cmd[16384];
         //snprintf(exact_after_zscore_cmd, sizeof(exact_after_zscore_cmd), "cd %s/exact && /home/francesco/anaconda3/envs/gwas_test/bin/gemma -g ./C_pruned_geno_matrix.txt -p ./C_pruned_pheno.txt -u eigenvectors.txt -d eigenvalues.txt -lmm 4 -n 1 -o gemma_output > /dev/null 2>&1", target_dir);
-        snprintf(exact_after_zscore_cmd, sizeof(exact_after_zscore_cmd), "cd %s/exact && /home/francesco/anaconda3/envs/gwas_test/bin/gemma -g ./C_pruned_geno_matrix.txt -p ./C_pruned_pheno.txt -u eigenvectors.txt -d eigenvalues.txt -maf 0 -miss 1 -lmm 4 -n 1 -o gemma_output > /dev/null 2>&1", target_dir);
+        snprintf(exact_after_zscore_cmd, sizeof(exact_after_zscore_cmd), "cd %s/exact && ../../../gemma -g ./C_pruned_geno_matrix.txt -p ./C_pruned_pheno.txt -u eigenvectors.txt -d eigenvalues.txt -maf 0 -miss 1 -lmm 4 -n 1 -o gemma_output > /dev/null 2>&1", target_dir);
         int result = system(exact_after_zscore_cmd);
         if(result == -1) {
             perror("Failed to execute GEMMA exact command after z-score computation");
