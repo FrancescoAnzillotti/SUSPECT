@@ -18,6 +18,7 @@
 
 import argparse
 import csv
+import os
 import random
 import shutil
 import subprocess
@@ -63,17 +64,26 @@ def write_subset(rows, pheno, keep, matrix_out, pheno_out):
 # RUN C
 # ============================================================
 
-def run_c(binary, run_dir, matrix, pheno, genotype, pheno12, exact, cwd):
+def run_c(binary, run_dir, matrix, pheno, genotype, pheno12, exact, cwd, n_cores=10):
+    available = len(os.sched_getaffinity(0))   # cores this process is actually allowed to use
+    if not 1 <= n_cores <= available:
+        raise ValueError(f"n_cores must be between 1 and {available}, got {n_cores}")
+
     run_dir.mkdir(parents=True, exist_ok=True)
-    cmd = [str(binary), str(run_dir), str(exact), "-m", str(matrix), "-o", str(pheno)]
+
+    cmd = ["taskset", "-c", f"0-{n_cores - 1}", str(binary), str(run_dir), str(exact), "-m", str(matrix), "-o", str(pheno)]
     if genotype:
         cmd.append("-g")
     if pheno12:
         cmd.append("-2")
-    start = time.time()
-    result = subprocess.run(cmd, cwd=cwd)
-    return result.returncode, time.time() - start
 
+    env = {**os.environ,
+           "OPENBLAS_NUM_THREADS": str(n_cores),
+           "OMP_NUM_THREADS": str(n_cores)}
+
+    start = time.time()
+    result = subprocess.run(cmd, cwd=cwd, env=env)
+    return result.returncode, time.time() - start
 # ============================================================
 # PARSE GLOBAL LOGS
 # ============================================================
@@ -237,6 +247,8 @@ def main():
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("-g", "--genotype-file", action="store_true")
     p.add_argument("-2", "--pheno12", action="store_true")
+    p.add_argument("--cores", type=int, default=10, help="Number of CPU cores for the C binary and GEMMA (uses cores 0..N-1)")
+    
     args = p.parse_args()
     
     matrix = Path(args.matrix).resolve()
@@ -281,7 +293,7 @@ def main():
         full_pheno = tmpdir / "full_pheno.txt"
         write_subset(rows, pheno, list(range(n)), full_matrix, full_pheno)
 
-        rc, elapsed = run_c(binary, full_dir, full_matrix, full_pheno, args.genotype_file, args.pheno12, 1, cwd=results)
+        rc, elapsed = run_c(binary, full_dir, full_matrix, full_pheno, args.genotype_file, args.pheno12, 1, cwd=results, n_cores=args.cores)
         if rc != 0:
             raise RuntimeError(f"Full run failed with exit code {rc}")
             
@@ -339,7 +351,7 @@ def main():
                         run_dir.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(specs_path, run_dir / "specs.txt")
 
-                        rc, elapsed = run_c(binary, run_dir, matrix_out, pheno_out, args.genotype_file, args.pheno12, 1, cwd=results)
+                        rc, elapsed = run_c(binary, run_dir, matrix_out, pheno_out, args.genotype_file, args.pheno12, 1, cwd=results, n_cores=args.cores)
 
                         matrix_out.unlink(missing_ok=True)
                         pheno_out.unlink(missing_ok=True)
