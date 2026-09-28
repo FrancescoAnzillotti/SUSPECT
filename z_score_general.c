@@ -1614,7 +1614,7 @@ int main(int argc, char *argv[]) {
     double gemma_thr = gemma_threshold_for_n(data->snp_size);
     printf("SNPs: %d -> Z thr %.2f, GEMMA thr %.2f\n", data->snp_size, z_threshold_for_n(data->snp_size), gemma_thr);
 
-    int t0 = now_seconds();
+    double t0 = now_seconds();
 
 
     // ------------------------------------------------ FULL AND EXACT GEMMA ---------------------------------------------
@@ -1647,10 +1647,10 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    int t_gemma_end = now_seconds();
+    double t_gemma_end = now_seconds();
     char **gemma_relevant = read_gemma_relevant_snps(target_dir, gemma_thr, relevant_log_file, 0);
-    printf("Time taken for full and exact GEMMA execution: %d seconds\n\n", (t_gemma_end - t0));
-    fprintf(time_log_file, "%s\tGEMMA\t%d\tms\n", target_dir, (t_gemma_end - t0));
+    printf("Time taken for full and exact GEMMA execution: %f seconds\n\n", (t_gemma_end - t0));
+    fprintf(time_log_file, "%s\tGEMMA\t%f\tms\n", target_dir, (t_gemma_end - t0));
     
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1658,7 +1658,7 @@ int main(int argc, char *argv[]) {
 
 // ------------------------------------------------ EIGEN-SHRUNK Z-SCORE APPROACH ---------------------------------------------------------------------------------------------
 
-    int t_zscore_start = now_seconds();
+    double t_zscore_start = now_seconds();
 
 
 
@@ -1722,10 +1722,10 @@ int main(int argc, char *argv[]) {
     write_to_file(target_dir, z_score_list, data->snp_keep_mask, data->snp_size);
 
 
-    int t_zscore_end = now_seconds();
+    double t_zscore_end = now_seconds();
 
-    fprintf(time_log_file, "%s\tZ_SCORE\t%d\tms\n", target_dir, t_zscore_end - t_zscore_start);
-    printf("Time taken for EIGEN-SHRUNK Z-SCORE APPROACH on folder %s: %d milliseconds\n", target_dir, t_zscore_end - t_zscore_start);
+    fprintf(time_log_file, "%s\tZ_SCORE\t%f\tms\n", target_dir, (t_zscore_end - t_zscore_start));
+    printf("Time taken for EIGEN-SHRUNK Z-SCORE APPROACH on folder %s: %f milliseconds\n", target_dir, (t_zscore_end - t_zscore_start));
 
     match_z_scores_with_gemma(z_score_list, gemma_relevant, fn_log_file, data);
 
@@ -1749,11 +1749,11 @@ int main(int argc, char *argv[]) {
             exit(EXIT_FAILURE); 
         }
 
-        int t_exact_end = now_seconds();
-        fprintf(time_log_file, "%s\tGEMMA_EXACT_AFTER_ZSCORE\t%d\tms\n", target_dir, (t_exact_end - t_zscore_end));
-        printf("Time taken for exact GEMMA execution after EIGEN-SHRUNK Z-SCORE APPROACH on folder %s: %d milliseconds\n", target_dir, (t_exact_end - t_zscore_end));
-        printf("Total time taken for EIGEN-SHRUNK Z-SCORE APPROACH and exact GEMMA execution on remaining positions %s: %d milliseconds \n", target_dir, (t_exact_end - t_zscore_start));
-        fprintf(time_log_file, "%s\tZSCORE+GEMMA\t%d\tms\n\n\n\n", target_dir, (t_exact_end - t_zscore_start));
+        double t_exact_end = now_seconds();
+        fprintf(time_log_file, "%s\tGEMMA_EXACT_AFTER_ZSCORE\t%f\tms\n", target_dir, (t_exact_end - t_zscore_end));
+        printf("Time taken for exact GEMMA execution after EIGEN-SHRUNK Z-SCORE APPROACH on folder %s: %f milliseconds\n", target_dir, (t_exact_end - t_zscore_end));
+        printf("Total time taken for EIGEN-SHRUNK Z-SCORE APPROACH and exact GEMMA execution on remaining positions %s: %f milliseconds \n", target_dir, (t_exact_end - t_zscore_start));
+        fprintf(time_log_file, "%s\tZSCORE+GEMMA\t%f\tms\n\n\n\n", target_dir, (t_exact_end - t_zscore_start));
 
 
         after_z_gemma_relevant = read_gemma_relevant_snps(target_dir, gemma_thr, relevant_log_file, 1);
