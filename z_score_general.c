@@ -1553,14 +1553,6 @@ int main(int argc, char *argv[]) {
     FILE *fn_log_file = fopen("fn_log.csv", "a");
     FILE *time_log_file = fopen("time_log.csv", "a");
 
-    // setenv("OPENBLAS_NUM_THREADS", "1", 1);
-    // setenv("OMP_NUM_THREADS", "1", 1);
-    // setenv("OPENBLAS_CORETYPE", "Zen", 1);
-
-    openblas_set_num_threads(10);
-    omp_set_num_threads(10);
-    fprintf(stdout, "OpenBLAS threads: %d\n", openblas_get_num_threads());
-
     if (!relevant_log_file || !fn_log_file || !time_log_file) 
     {
         perror("opening log files");
