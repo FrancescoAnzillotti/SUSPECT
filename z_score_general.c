@@ -56,6 +56,8 @@ typedef struct node_z_score
 
 
 
+extern void openblas_set_num_threads(int);
+extern int openblas_get_num_threads(void);
 
 double now_seconds()  //millisecons
 {
@@ -1176,6 +1178,38 @@ int read_specs(const char *folder_path, int *ref_n_samples, int *ref_n_candidate
 }
 
 
+/* Bonferroni-equivalent thresholds (alpha = 0.05), chunked in half-decades of n.
+   Value is taken at the lower edge of each chunk, so it is never anti-conservative. */
+static double z_threshold_for_n(int n_snps)
+{
+    int k = (int)floor(2.0 * log10((double)n_snps));
+    switch (k) {
+        case 4:  return 3.29;   /*        100 -        316 */
+        case 5:  return 3.60;   /*        316 -      1,000 */
+        case 6:  return 3.89;   /*      1,000 -      3,162 */
+        case 7:  return 4.16;   /*      3,162 -     10,000 */
+        case 8:  return 4.41;   /*     10,000 -     31,623 */
+        case 9:  return 4.65;   /*     31,623 -    100,000 */
+        case 10: return 4.89;   /*    100,000 -    316,228 */
+        case 11: return 5.11;   /*    316,228 -  1,000,000 */
+        case 12: return 5.32;   /*  1,000,000 -  3,162,278 */
+        case 13: return 5.53;   /*  3,162,278 - 10,000,000 */
+        case 14: return 5.73;   /* 10,000,000 - 31,622,777 */
+        case 15: return 5.92;   /* 31.6M - 100M */
+        default:
+            return (k < 4) ? 3.29   /* n < 100: not chunked, threshold is a floor here */
+                           : 6.10;  /* n >= 100M: conservative lower edge */
+    }
+}
+
+static double gemma_threshold_for_n(int n_snps)
+{
+    int k = (int)floor(2.0 * log10((double)n_snps));
+    if (k < 4) k = 4;                 /* same floor as above */
+    return 1.30 + 0.5 * k;            /* = floor(-log10(0.05 / 10^(k/2)), 2 dp) */
+}
+
+
 
 void compute_z_scores(folder_geno_pheno *data, double *surprise_scores, node_z_score **head, FILE *relevant_log_file, int exact)
 {
@@ -1205,7 +1239,11 @@ void compute_z_scores(folder_geno_pheno *data, double *surprise_scores, node_z_s
     double reference_sample_size = (have_specs && ref_n_samples > 0) ? (double)ref_n_samples : data->original_sample_size; // fallback preserves original behavior when no baseline exists yet
 
     //double adj_thr = data->pruned_sample_size < 500?   4.45*sqrt(data->original_sample_size / reference_sample_size) : 4.45;
-    double adj_thr = data->pruned_sample_size < 500?   4.30*sqrt(data->original_sample_size / reference_sample_size) : 4.30;
+    //double adj_thr = data->pruned_sample_size < 500?   4.30*sqrt(data->original_sample_size / reference_sample_size) : 4.30;
+
+
+    double base_thr = z_threshold_for_n(data->snp_size);
+    double adj_thr  = data->pruned_sample_size < 500 ? base_thr * sqrt(data->original_sample_size / reference_sample_size): base_thr;
 
 
     write_specs_if_absent(data->folder_name, data->pruned_sample_size, data->snp_size, adj_thr);    
@@ -1515,9 +1553,13 @@ int main(int argc, char *argv[]) {
     FILE *fn_log_file = fopen("fn_log.csv", "a");
     FILE *time_log_file = fopen("time_log.csv", "a");
 
-    setenv("OPENBLAS_NUM_THREADS", "1", 1);
-    setenv("OMP_NUM_THREADS", "1", 1);
-    setenv("OPENBLAS_CORETYPE", "Zen", 1);
+    // setenv("OPENBLAS_NUM_THREADS", "1", 1);
+    // setenv("OMP_NUM_THREADS", "1", 1);
+    // setenv("OPENBLAS_CORETYPE", "Zen", 1);
+
+    openblas_set_num_threads(10);
+    omp_set_num_threads(10);
+    fprintf(stdout, "OpenBLAS threads: %d\n", openblas_get_num_threads());
 
     if (!relevant_log_file || !fn_log_file || !time_log_file) 
     {
@@ -1577,6 +1619,9 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    double gemma_thr = gemma_threshold_for_n(data->snp_size);
+    printf("SNPs: %d -> Z thr %.2f, GEMMA thr %.2f\n", data->snp_size, z_threshold_for_n(data->snp_size), gemma_thr);
+
     int t0 = now_seconds();
 
 
@@ -1611,8 +1656,8 @@ int main(int argc, char *argv[]) {
     }
 
     int t_gemma_end = now_seconds();
-    char **gemma_relevant = read_gemma_relevant_snps(target_dir, 5.3, relevant_log_file, 0);
-    printf("Time taken for full and exact GEMMA execution: %d milliseconds\n\n", (t_gemma_end - t0));
+    char **gemma_relevant = read_gemma_relevant_snps(target_dir, gemma_thr, relevant_log_file, 0);
+    printf("Time taken for full and exact GEMMA execution: %d seconds\n\n", (t_gemma_end - t0));
     fprintf(time_log_file, "%s\tGEMMA\t%d\tms\n", target_dir, (t_gemma_end - t0));
     
 
@@ -1669,6 +1714,7 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
+
     int info = compute_eigendecomposition(analyzed_GRM, data->pruned_sample_size, eigvals, exact, data);
     if (info != 0) 
     {
@@ -1718,7 +1764,7 @@ int main(int argc, char *argv[]) {
         fprintf(time_log_file, "%s\tZSCORE+GEMMA\t%d\tms\n\n\n\n", target_dir, (t_exact_end - t_zscore_start));
 
 
-        after_z_gemma_relevant = read_gemma_relevant_snps(target_dir, 5.3, relevant_log_file, 1);
+        after_z_gemma_relevant = read_gemma_relevant_snps(target_dir, gemma_thr, relevant_log_file, 1);
         match_gemmas(after_z_gemma_relevant, gemma_relevant, fn_log_file, data);
 
         free(after_z_gemma_relevant);

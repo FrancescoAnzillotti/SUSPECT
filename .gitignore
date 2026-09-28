@@ -5,3 +5,4 @@ results/
 workdir/
 plot_maker.R
 plots/
+simulate_data.sh

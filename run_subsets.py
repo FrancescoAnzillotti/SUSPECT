@@ -231,8 +231,8 @@ def main():
     p.add_argument("--binary", required=True)
     p.add_argument("--workdir", required=True)
     p.add_argument("--results", required=True)
-    p.add_argument("--removal", default="10,20,30,40")
-    p.add_argument("--removed-cases", default="25,50,75")
+    p.add_argument("--removal", default="")
+    p.add_argument("--removed-cases", default="")
     p.add_argument("--replicates", type=int, default=5)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("-g", "--genotype-file", action="store_true")
@@ -306,60 +306,62 @@ def main():
         })
         print(f"Full run completed in {elapsed:.2f}s")
 
-        # =====================================================
+                # =====================================================
         # REMOVAL EXPERIMENTS
         # =====================================================
-        rng = random.Random(args.seed)
-        removals = [float(x) for x in args.removal.split(",")]
-        removed_case_pcts = [float(x) for x in args.removed_cases.split(",")]
+        if args.removal and args.removed_cases:
+            rng = random.Random(args.seed)
+            removals = [float(x) for x in args.removal.split(",")]
+            removed_case_pcts = [float(x) for x in args.removed_cases.split(",")]
 
-        for removal_pct in removals:
-            n_remove = round(n * removal_pct / 100)
-            print(f"\n=== REMOVE {removal_pct:g}% ({n_remove} samples) ===")
+            for removal_pct in removals:
+                n_remove = round(n * removal_pct / 100)
+                print(f"\n=== REMOVE {removal_pct:g}% ({n_remove} samples) ===")
 
-            for case_pct in removed_case_pcts:
-                n_remove_cases = round(n_remove * case_pct / 100)
-                n_remove_controls = n_remove - n_remove_cases
+                for case_pct in removed_case_pcts:
+                    n_remove_cases = round(n_remove * case_pct / 100)
+                    n_remove_controls = n_remove - n_remove_cases
 
-                if n_remove_cases > len(cases) or n_remove_controls > len(controls):
-                    continue
+                    if n_remove_cases > len(cases) or n_remove_controls > len(controls):
+                        continue
 
-                for rep in range(1, args.replicates + 1):
-                    name = f"remove{removal_pct:g}_cases{case_pct:g}_rep{rep}"
-                    run_dir = results / name
-                    
-                    removed = set(rng.sample(cases, n_remove_cases) + rng.sample(controls, n_remove_controls))
-                    keep = [i for i in range(n) if i not in removed]
+                    for rep in range(1, args.replicates + 1):
+                        name = f"remove{removal_pct:g}_cases{case_pct:g}_rep{rep}"
+                        run_dir = results / name
 
-                    matrix_out = tmpdir / f"{name}_matrix.txt"
-                    pheno_out = tmpdir / f"{name}_pheno.txt"
-                    write_subset(rows, pheno, keep, matrix_out, pheno_out)
+                        removed = set(rng.sample(cases, n_remove_cases) + rng.sample(controls, n_remove_controls))
+                        keep = [i for i in range(n) if i not in removed]
 
-                    run_dir.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(specs_path, run_dir / "specs.txt")
+                        matrix_out = tmpdir / f"{name}_matrix.txt"
+                        pheno_out = tmpdir / f"{name}_pheno.txt"
+                        write_subset(rows, pheno, keep, matrix_out, pheno_out)
 
-                    rc, elapsed = run_c(binary, run_dir, matrix_out, pheno_out, args.genotype_file, args.pheno12, 1, cwd=results)
+                        run_dir.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(specs_path, run_dir / "specs.txt")
 
-                    # Clean up temporary dataset files immediately after C finishes reading them
-                    matrix_out.unlink(missing_ok=True)
-                    pheno_out.unlink(missing_ok=True)
-                    
-                    all_experiments.append({
-                        "experiment": name,
-                        "folder": run_dir.resolve(),
-                        "removal_pct": removal_pct,
-                        "removed_case_pct": case_pct,
-                        "replicate": rep,
-                        "total_samples": n,
-                        "removed_samples": n_remove,
-                        "removed_cases": n_remove_cases,
-                        "removed_controls": n_remove_controls,
-                        "remaining_samples": len(keep),
-                        "input_snps": input_snps,
-                        "python_wall_time_seconds": elapsed,
-                        "return_code": rc
-                    })
-                    print(f"  {name} completed in {elapsed:.2f}s (code {rc})")
+                        rc, elapsed = run_c(binary, run_dir, matrix_out, pheno_out, args.genotype_file, args.pheno12, 1, cwd=results)
+
+                        matrix_out.unlink(missing_ok=True)
+                        pheno_out.unlink(missing_ok=True)
+
+                        all_experiments.append({
+                            "experiment": name,
+                            "folder": run_dir.resolve(),
+                            "removal_pct": removal_pct,
+                            "removed_case_pct": case_pct,
+                            "replicate": rep,
+                            "total_samples": n,
+                            "removed_samples": n_remove,
+                            "removed_cases": n_remove_cases,
+                            "removed_controls": n_remove_controls,
+                            "remaining_samples": len(keep),
+                            "input_snps": input_snps,
+                            "python_wall_time_seconds": elapsed,
+                            "return_code": rc
+                        })
+                        print(f"  {name} completed in {elapsed:.2f}s (code {rc})")
+        else:
+            print("\nNo --removal / --removed-cases provided — running FULL dataset only.")
 
     # =========================================================
     # PARSE GLOBAL LOGS AND COMBINE METRICS
