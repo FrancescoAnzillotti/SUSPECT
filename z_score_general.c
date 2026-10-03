@@ -15,6 +15,8 @@
 #include <time.h>
 #include <omp.h>
 #include <limits.h> 
+#include <sys/mman.h>
+#include <fcntl.h>
 
 #define max_rows 2000
 //#define max_snps 100000
@@ -43,14 +45,14 @@ typedef struct
     double *snp_means_no_skipped_samples;
     double *snp_stds_no_skipped_samples;
 
+    double adjusted_z_score_threshold; // adjusted threshold for z-score filtering
+
 } folder_geno_pheno;
 
 typedef struct node_z_score
 {
     char *snp_name;
     float real_z_score;
-    float linear_z_score;
-    float corrected_linear_z_score;
     struct node_z_score *next;
 } node_z_score;
 
@@ -109,7 +111,7 @@ int * allocate_pheno_vector(void)
 
 int *allocate_geno_matrix(int pruned_sample_size, int n_snps)
 {
-    int *geno = (int *)malloc(pruned_sample_size * n_snps * sizeof(int));
+    int *geno = (int *)malloc((size_t)pruned_sample_size * (size_t)n_snps * sizeof(int));
 
     if (geno == NULL) 
     {
@@ -163,8 +165,6 @@ void create_node_and_head_insert(node_z_score **head, char *snp_name )
     
     new_node->snp_name = snp_name;
     new_node->real_z_score = 0.00;
-    new_node->linear_z_score = 0.00;
-    new_node->corrected_linear_z_score = 0.00;
     new_node->next = *head;
 
     *head = new_node;
@@ -175,7 +175,7 @@ void print_list(node_z_score *head)
     node_z_score *current = head;
     while(current != NULL)
     {
-        printf("SNP name: %s \t real_z_score: %f \t linear_z_score: %f \t corrected_linear_z_score: %f \n", current->snp_name, current->real_z_score, current->linear_z_score, current->corrected_linear_z_score);
+        printf("SNP name: %s \t z_score: %f \n", current->snp_name, current->real_z_score);
         current = current->next;
     }
 
@@ -542,8 +542,10 @@ void process_snp_row(double *row, int original_sample_size, int *skipped_samples
 
 void standardize_snp_matrix_row(double *row, int original_sample_size, double mean, double std, double std_no_skipped, int *keep_mask, double *std_row)
 {
-    for (int i = 0; i < original_sample_size; ++i)
-        std_row[i] = 0.0;
+    /* std_row == NULL: only the validity mask is computed (subset-reuse path, kinship comes from the cache) */
+    if (std_row != NULL)
+        for (int i = 0; i < original_sample_size; ++i)
+            std_row[i] = 0.0;
 
     if (std_no_skipped <= 0.0 || std <= 0.0) {
         *keep_mask = 0;
@@ -551,6 +553,7 @@ void standardize_snp_matrix_row(double *row, int original_sample_size, double me
     }
 
     *keep_mask = 1;
+    if (std_row == NULL) return;
     for (int i = 0; i < original_sample_size; ++i) {
         if (row[i] >= 0.0) std_row[i] = (row[i] - mean) / std;
     }
@@ -576,7 +579,7 @@ void standardize_snp_matrix(folder_geno_pheno *data, double *std_matrix, int *n_
     #pragma omp parallel for reduction(+:valid_snp_count)
     for (int j = 0; j < data->snp_size; ++j) 
     {
-        double *row = data->full_geno_matrix + j * data->original_sample_size;
+        double *row = data->full_geno_matrix + (size_t)j * (size_t)data->original_sample_size;
  
         
         process_snp_row(row, data->original_sample_size, 
@@ -591,7 +594,7 @@ void standardize_snp_matrix(folder_geno_pheno *data, double *std_matrix, int *n_
                         data->snp_stds_including_skipped_samples[j], 
                         data->snp_stds_no_skipped_samples[j],   
                         &data->snp_keep_mask[j],
-                        std_matrix + j * data->original_sample_size);
+                        (std_matrix != NULL) ? std_matrix + (size_t)j * (size_t)data->original_sample_size : NULL);
         
         if(data->snp_keep_mask[j])
         {
@@ -663,7 +666,7 @@ int *sample_snp_row_indices(int snp_size, double sample_fraction, int *sampled_s
 
 double *extract_subset_std_matrix(const double *std_matrix, int original_sample_size, const int *sampled_snp_indices, int sampled_snp_size)
 {
-    double *subset_std_matrix = (double *)malloc(sampled_snp_size * original_sample_size * sizeof(double));
+    double *subset_std_matrix = (double *)malloc((size_t)sampled_snp_size * (size_t)original_sample_size * sizeof(double));
     if (subset_std_matrix == NULL) 
     {
         perror("malloc subset_std_matrix");
@@ -672,7 +675,7 @@ double *extract_subset_std_matrix(const double *std_matrix, int original_sample_
 
     for (int i = 0; i < sampled_snp_size; i++) 
     {
-        memcpy(subset_std_matrix + i * original_sample_size, std_matrix + sampled_snp_indices[i] * original_sample_size, original_sample_size * sizeof(double));
+        memcpy(subset_std_matrix + (size_t)i * (size_t)original_sample_size, std_matrix + (size_t)sampled_snp_indices[i] * (size_t)original_sample_size, (size_t)original_sample_size * sizeof(double));
     }
 
     return subset_std_matrix;
@@ -713,7 +716,7 @@ void compute_grm_CALL(double *subset_std_matrix, int sampled_snp_size, int origi
     );
 
     double inv = 1.0 / (double)m_divisor;
-    for (int i = 0; i < original_sample_size * original_sample_size; i++) 
+    for (size_t i = 0; i < (size_t)original_sample_size * (size_t)original_sample_size; i++) 
     {
         grm[i] *= inv;
     }
@@ -729,29 +732,35 @@ double *compute_GRM(const double *std_matrix, int snp_size, int original_sample_
 
     if (sample_fraction == 1.0) {
 
-        double *valid_std_matrix = extract_subset_std_matrix(std_matrix, original_sample_size, valid_snp_indices, n_valid_snps);
-
-        cblas_dgemm(CblasRowMajor, 
-                    CblasTrans, 
-                    CblasNoTrans,
-                    original_sample_size, 
-                    original_sample_size, 
-                    n_valid_snps,
-                    1.0,
-                    valid_std_matrix, 
+        /* Rows of std_matrix belonging to invalid SNPs are all zeros (see standardize_snp_matrix_row), so the
+           product over the whole matrix equals the product over the valid rows only: no copy of the standardized
+           matrix is needed. SYRK fills only the upper triangle (half the flops of GEMM); it is scaled and
+           mirrored in a single pass below. */
+        cblas_dsyrk(CblasRowMajor,
+                    CblasUpper,
+                    CblasTrans,
                     original_sample_size,
-                    valid_std_matrix, 
+                    snp_size,
+                    1.0,
+                    std_matrix,
                     original_sample_size,
                     0.0,
-                    GRM, 
+                    GRM,
                     original_sample_size);
 
         double inv = 1.0 / (double)n_valid_snps;
-        for (int i = 0; i < original_sample_size * original_sample_size; i++) 
+        size_t n = (size_t)original_sample_size;
+
+        #pragma omp parallel for schedule(dynamic, 16)
+        for (size_t i = 0; i < n; i++)
         {
-            GRM[i] *= inv;
+            for (size_t j = i; j < n; j++)
+            {
+                double v = GRM[i * n + j] * inv;
+                GRM[i * n + j] = v;
+                GRM[j * n + i] = v;
+            }
         }
-        free(valid_std_matrix);
         return GRM;
     }
 
@@ -784,26 +793,37 @@ double *compute_GRM(const double *std_matrix, int snp_size, int original_sample_
 ----------------------------------------------------------*/
 double *extract_analyzed_submatrix(const double *full_matrix, int full_n, const int *keep_mask, int pruned_n)
 {
-    double *sub = malloc((size_t)pruned_n * pruned_n * sizeof(double));
+    size_t n_full = (size_t)full_n;
+    size_t n_pruned = (size_t)pruned_n;
+
+    double *sub = malloc(n_pruned * n_pruned * sizeof(double));
     if (sub == NULL) {
         perror("malloc analyzed submatrix");
         exit(1);
     }
 
-    int *kept_idx = malloc(pruned_n * sizeof(int));
+    if (n_pruned == n_full) {                       // nothing dropped
+        memcpy(sub, full_matrix, n_full * n_full * sizeof(double));
+        return sub;
+    }
+
+    size_t *kept_idx = malloc(n_pruned * sizeof(size_t));
     if (kept_idx == NULL) {
         perror("malloc kept_idx");
         exit(1);
     }
 
-    int k = 0;
-    for (int i = 0; i < full_n; i++) {
+    size_t k = 0;
+    for (size_t i = 0; i < n_full; i++) {
         if (keep_mask[i]) kept_idx[k++] = i;
     }
 
-    for (int i = 0; i < pruned_n; i++) {
-        for (int j = 0; j < pruned_n; j++) {
-            sub[i * pruned_n + j] = full_matrix[kept_idx[i] * full_n + kept_idx[j]];
+    #pragma omp parallel for schedule(static)
+    for (size_t i = 0; i < n_pruned; i++) {
+        const double *src_row = full_matrix + kept_idx[i] * n_full;
+        double *dst_row = sub + i * n_pruned;
+        for (size_t j = 0; j < n_pruned; j++) {
+            dst_row[j] = src_row[kept_idx[j]];
         }
     }
 
@@ -844,7 +864,7 @@ void write_eigen_decomposition_to_file(double *U, double *eigvals, int n, const 
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
             fprintf(eigenvectors_output_file, j == 0 ? "%.17g" : "\t%.17g",
-                    U[i * n + j]);
+                    U[(size_t)i * n + j]);
         }
         fputc('\n', eigenvectors_output_file);
     }
@@ -861,8 +881,8 @@ void reverse_eigen_decomposition(double *U, double *eigvals, int n)
         eigvals[i] = eigvals[n - 1 - i];
         eigvals[n - 1 - i] = temp;
     }
-    for(int row = 0; row < n; row++) {
-        for(int col = 0; col < n / 2; col++) {
+    for(size_t row = 0; row < (size_t)n; row++) {
+        for(size_t col = 0; col < (size_t)n / 2; col++) {
             double temp = U[row * n + col];
             U[row * n + col] = U[row * n + (n - 1 - col)];
             U[row * n + (n - 1 - col)] = temp;
@@ -982,14 +1002,9 @@ double *spectral_transform_phenotype(int *pheno_vector, const double *U, const d
         y_centered[i] = pheno_vector[i] - mean_y;
     }
 
-    /* tmp = U^T * y_centered */
-    for (int i = 0; i < pruned_sample_size; i++) {
-        double s = 0.0;
-        for (int j = 0; j < pruned_sample_size; j++) {
-            s += U[j * pruned_sample_size + i] * y_centered[j];
-        }
-        tmp[i] = s;
-    }
+    /* tmp = U^T * y_centered   (row-major U: contiguous GEMV instead of a column-strided loop) */
+    cblas_dgemv(CblasRowMajor, CblasTrans, pruned_sample_size, pruned_sample_size,
+                1.0, U, pruned_sample_size, y_centered, 1, 0.0, tmp, 1);
 
     /* tmp2[i] = D[i] * tmp[i] */
     for (int i = 0; i < pruned_sample_size; i++) {
@@ -998,12 +1013,11 @@ double *spectral_transform_phenotype(int *pheno_vector, const double *U, const d
     }
 
     /* out = U * tmp2 */
+    cblas_dgemv(CblasRowMajor, CblasNoTrans, pruned_sample_size, pruned_sample_size,
+                1.0, U, pruned_sample_size, tmp2, 1, 0.0, p, 1);
+
     for (int i = 0; i < pruned_sample_size; i++) {
-        double s = 0.0;
-        for (int j = 0; j < pruned_sample_size; j++) {
-            s += U[i * pruned_sample_size + j] * tmp2[j];
-        }
-        p[i] = s + mean_y;
+        p[i] = p[i] + mean_y;
         if(p[i] < 0.01) p[i] = 0.01;
         if(p[i] > 0.99) p[i] = 0.99;
     }
@@ -1074,9 +1088,9 @@ double *compute_clipped_IPW_surprise_score(double *spectral_pheno, int *pheno_ve
 
 
 
-double *compute_four_counts(folder_geno_pheno *data, int snp_index, double *counts, char *snp_col, double *surprise_scores)
+void compute_four_counts(folder_geno_pheno *data, int snp_index, double *counts, char *snp_col, double *surprise_scores)
 {
-    int snp_base = snp_index * data->pruned_sample_size;
+    size_t snp_base = (size_t)snp_index * (size_t)data->pruned_sample_size;
 
     for (int i = 0; i < data->pruned_sample_size; i++) {
         int snp_value = data->geno_matrix[snp_base + i];
@@ -1106,7 +1120,7 @@ void write_geno_col_to_file(FILE *output_file, folder_geno_pheno *data, int snp_
     // Write SNP header columns
     fprintf(output_file, "%s\tA\tT", snp_name);
     
-    int base = snp_index * data->original_sample_size;
+    size_t base = (size_t)snp_index * (size_t)data->original_sample_size;
     
     for (int i = 0; i < data->original_sample_size; i++) {
         // Only output samples that pass the inclusion/keep mask
@@ -1243,10 +1257,10 @@ void compute_z_scores(folder_geno_pheno *data, double *surprise_scores, node_z_s
 
 
     double base_thr = z_threshold_for_n(data->snp_size);
-    double adj_thr  = data->pruned_sample_size < 500 ? base_thr * sqrt(data->original_sample_size / reference_sample_size): base_thr;
+    //double adj_thr  = data->pruned_sample_size < 500 ? base_thr * sqrt(data->original_sample_size / reference_sample_size): base_thr;
+    data->adjusted_z_score_threshold = sqrt(data->pruned_sample_size / reference_sample_size)* base_thr;
 
-
-    write_specs_if_absent(data->folder_name, data->pruned_sample_size, data->snp_size, adj_thr);    
+    write_specs_if_absent(data->folder_name, data->pruned_sample_size, data->snp_size, data->adjusted_z_score_threshold);    
     
     int processed_snps = 0;
     for (int i = data->snp_size - 1; i >= 0; i--) 
@@ -1273,7 +1287,7 @@ void compute_z_scores(folder_geno_pheno *data, double *surprise_scores, node_z_s
 
         node->real_z_score = fabs(log((a / b) / (c / d)) / sqrt(1.0 / a + 1.0 / b + 1.0 / c + 1.0 / d));
 
-        if (node->real_z_score > adj_thr) 
+        if (node->real_z_score > data->adjusted_z_score_threshold) 
         {
             count_relevant++;
             if (exact) 
@@ -1467,7 +1481,10 @@ void match_z_scores_with_gemma(node_z_score *z_score_list, char **gemma_relevant
         {
             if (strcmp(current->snp_name, gemma_relevant[i]) == 0) 
             {
-                found = 1;
+                if (current->real_z_score > data->adjusted_z_score_threshold) {
+                    found = 1;
+                    break;
+                }
             }
             current = current->next;
         }
@@ -1531,7 +1548,7 @@ void write_kinship(const char *folder_path, double *GRM, int original_sample_siz
 
     for (int i = 0; i < original_sample_size; i++) {
         for (int j = 0; j < original_sample_size; j++) {
-            fprintf(kinship_file, "%.8g", GRM[i * original_sample_size + j]);
+            fprintf(kinship_file, "%.8g", GRM[(size_t)i * original_sample_size + j]);
             if (j < original_sample_size - 1) {
                 fprintf(kinship_file, "\t");
             }
@@ -1544,7 +1561,214 @@ void write_kinship(const char *folder_path, double *GRM, int original_sample_siz
 
 
 
+/*
+  SUBSET REUSE
+  --------------------------------------------------------------------------------------
+  Reference run  (no specs.txt, or no valid cache): standardize + GRM (O(M N^2)), and the
+                 full original_sample_size x original_sample_size kinship is written, raw binary doubles,
+                 to C_COMPUTED_kinship_matrix.bin together with the propensity scores
+                 (C_COMPUTED_propensity.bin, used only by --reuse).
+  Subset run     (specs.txt + valid cache): no standardized matrix, no GRM. The kept samples are those
+                 with a valid phenotype (skipped_samples, i.e. the NA pattern of the outcome file,
+                 which is also what GEMMA reads). The kinship is memory-mapped and only the kept
+                 rows/columns are copied out: K[S,S] is exactly the kinship of the subset.
+*/
 
+void kinship_cache_path(const char *folder_path, char *out, size_t out_size)
+{
+    snprintf(out, out_size, "%s/C_COMPUTED_kinship_matrix.bin", folder_path);
+}
+
+void propensity_cache_path(const char *folder_path, char *out, size_t out_size)
+{
+    snprintf(out, out_size, "%s/C_COMPUTED_propensity.bin", folder_path);
+}
+
+/* 1 if specs.txt exists AND the kinship cache matches this dataset (same number of SNPs and samples) */
+int kinship_cache_is_valid(const char *folder_path, size_t original_sample_size, int snp_size)
+{
+    int ref_n_samples = 0, ref_n_candidates = 0;
+    double ref_z_threshold = 0.0;
+
+    if (!read_specs(folder_path, &ref_n_samples, &ref_n_candidates, &ref_z_threshold))
+        return 0;                                   // no specs.txt: this is the reference run
+
+    char path[8192];
+    kinship_cache_path(folder_path, path, sizeof(path));
+
+    struct stat st;
+    if (stat(path, &st) != 0 ||
+        (size_t)st.st_size != original_sample_size * original_sample_size * sizeof(double) ||
+        ref_n_candidates != snp_size)
+    {
+        fprintf(stderr, "specs.txt found but kinship cache %s is missing or does not match this dataset: recomputing it.\n", path);
+        return 0;
+    }
+    return 1;
+}
+
+int write_binary_atomic(const char *path, const double *values, size_t n_values)
+{
+    char tmp_path[8192 + 8];
+    snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
+
+    FILE *f = fopen(tmp_path, "wb");
+    if (f == NULL) { perror(tmp_path); return -1; }
+
+    if (fwrite(values, sizeof(double), n_values, f) != n_values) {
+        perror(tmp_path);
+        fclose(f);
+        remove(tmp_path);
+        return -1;
+    }
+    fclose(f);
+
+    if (rename(tmp_path, path) != 0) { perror(path); return -1; }   // atomic: readers never see a half-written file
+    return 0;
+}
+
+int write_kinship_binary(const char *folder_path, const double *GRM, size_t original_sample_size)
+{
+    char path[8192];
+    kinship_cache_path(folder_path, path, sizeof(path));
+    return write_binary_atomic(path, GRM, original_sample_size * original_sample_size);
+}
+
+/* Memory-maps the cached kinship and copies out K[kept, kept]. Dropped rows are never touched. */
+double *read_kinship_submatrix(const char *folder_path, size_t full_n, const int *keep_mask, size_t pruned_n)
+{
+    char path[8192];
+    kinship_cache_path(folder_path, path, sizeof(path));
+
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) { perror(path); return NULL; }
+
+    size_t bytes = full_n * full_n * sizeof(double);
+    const double *K = (const double *)mmap(NULL, bytes, PROT_READ, MAP_PRIVATE, fd, 0);
+    close(fd);
+    if (K == MAP_FAILED) { perror("mmap kinship"); return NULL; }
+
+    double *sub = (double *)malloc(pruned_n * pruned_n * sizeof(double));
+    size_t *kept_idx = (size_t *)malloc(pruned_n * sizeof(size_t));
+    if (sub == NULL || kept_idx == NULL) {
+        perror("malloc kinship submatrix");
+        free(sub); free(kept_idx);
+        munmap((void *)K, bytes);
+        return NULL;
+    }
+
+    size_t k = 0;
+    for (size_t i = 0; i < full_n; i++) {
+        if (keep_mask[i]) kept_idx[k++] = i;
+    }
+
+    if (pruned_n == full_n) {                       // nothing dropped
+        memcpy(sub, K, bytes);
+    } else {
+        #pragma omp parallel for schedule(static)
+        for (size_t i = 0; i < pruned_n; i++) {
+            const double *src_row = K + kept_idx[i] * full_n;
+            double *dst_row = sub + i * pruned_n;
+            for (size_t j = 0; j < pruned_n; j++) {
+                dst_row[j] = src_row[kept_idx[j]];
+            }
+        }
+    }
+
+    free(kept_idx);
+    munmap((void *)K, bytes);
+    return sub;
+}
+
+/* Propensity scores of the reference run, scattered to original sample positions (NA = no phenotype). */
+void save_propensity_cache(const char *folder_path, const double *p, const int *keep_mask, size_t original_sample_size)
+{
+    double *p_full = (double *)malloc(original_sample_size * sizeof(double));
+    if (p_full == NULL) { perror("malloc propensity cache"); return; }
+
+    size_t k = 0;
+    for (size_t i = 0; i < original_sample_size; i++)
+        p_full[i] = keep_mask[i] ? p[k++] : NAN;
+
+    char path[8192];
+    propensity_cache_path(folder_path, path, sizeof(path));
+    write_binary_atomic(path, p_full, original_sample_size);
+    free(p_full);
+}
+
+/* Reference-run propensities restricted to the kept samples. NULL if the cache is unusable. */
+double *load_propensity_subset(const char *folder_path, size_t original_sample_size, const int *keep_mask, size_t pruned_n)
+{
+    char path[8192];
+    propensity_cache_path(folder_path, path, sizeof(path));
+
+    struct stat st;
+    if (stat(path, &st) != 0 || (size_t)st.st_size != original_sample_size * sizeof(double))
+        return NULL;
+
+    FILE *f = fopen(path, "rb");
+    if (f == NULL) return NULL;
+
+    double *p_full = (double *)malloc(original_sample_size * sizeof(double));
+    double *p = (double *)malloc(pruned_n * sizeof(double));
+    if (p_full == NULL || p == NULL || fread(p_full, sizeof(double), original_sample_size, f) != original_sample_size) {
+        fclose(f); free(p_full); free(p);
+        return NULL;
+    }
+    fclose(f);
+
+    size_t k = 0;
+    for (size_t i = 0; i < original_sample_size; i++) {
+        if (!keep_mask[i]) continue;
+        if (isnan(p_full[i])) {                     // sample had no phenotype in the reference run
+            fprintf(stderr, "--reuse: kept sample %zu has no cached propensity; computing it from the kinship instead.\n", i);
+            free(p_full); free(p);
+            return NULL;
+        }
+        p[k++] = p_full[i];
+    }
+
+    free(p_full);
+    return p;
+}
+
+/*
+  Same propensity as spectral_transform_phenotype, WITHOUT an eigendecomposition:
+
+      p = mean_y + K (K + delta I)^-1 (y - mean_y)  =  y - delta * (K + delta I)^-1 (y - mean_y)
+
+  K + delta I is symmetric positive definite (delta > 0), so a single Cholesky solve (n^3/3 flops, no
+  eigenvectors) gives exactly U diag(L/(L+delta)) U^T (y - mean_y) + mean_y. A row-major symmetric matrix is
+  also its own column-major transpose, hence LAPACK_COL_MAJOR and no internal transposition copy.
+  The kinship is overwritten by its Cholesky factor.
+*/
+double *spectral_transform_phenotype_cholesky(int *pheno_vector, double *analyzed_GRM, int pruned_sample_size, double delta)
+{
+    size_t n = (size_t)pruned_sample_size;
+    double mean_y = mean_vector(pheno_vector, pruned_sample_size);
+
+    double *p = (double *)malloc(n * sizeof(double));
+    if (p == NULL) return NULL;
+
+    for (size_t i = 0; i < n; i++) {
+        analyzed_GRM[i * n + i] += delta;
+        p[i] = pheno_vector[i] - mean_y;            // right-hand side, overwritten by the solution
+    }
+
+    lapack_int info = LAPACKE_dposv(LAPACK_COL_MAJOR, 'L', (lapack_int)n, 1, analyzed_GRM, (lapack_int)n, p, (lapack_int)n);
+    if (info != 0) {
+        fprintf(stderr, "LAPACKE_dposv failed, info=%d\n", (int)info);
+        free(p);
+        return NULL;
+    }
+
+    for (size_t i = 0; i < n; i++) {
+        p[i] = (double)pheno_vector[i] - delta * p[i];
+        if(p[i] < 0.01) p[i] = 0.01;
+        if(p[i] > 0.99) p[i] = 0.99;
+    }
+    return p;
+}
 
 
 int main(int argc, char *argv[]) {
@@ -1565,6 +1789,7 @@ int main(int argc, char *argv[]) {
     int is_genotype_file = 0;
     int exact = -1;
     int pheno_offset = 0; // default: phenotype file already 0/1, no shift
+    int reuse_weights = 0; // --reuse: subset run takes the reference-run propensities instead of recomputing them from K[S,S]
 
 
     for (int i = 1; i < argc; i++) {
@@ -1575,6 +1800,9 @@ int main(int argc, char *argv[]) {
         } else if (strcmp(argv[i], "-g") == 0) {
             is_genotype_file = 1;
         } 
+        else if (strcmp(argv[i], "--reuse") == 0) {
+            reuse_weights = 1;
+        }
         else if (strcmp(argv[i], "-2") == 0) {
             pheno_offset = 1; // phenotype file is 1/2-coded, subtract 1 to normalize
         } else if (target_dir == NULL) {
@@ -1585,7 +1813,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (target_dir == NULL || exact == -1 || matrix_path == NULL || outcome_path == NULL) {
-        fprintf(stderr, "Usage: %s <folder_path> <0=approximate|1=exact> -m <matrix.txt> -o <outcome.txt> [-g] [-2]\n", argv[0]);
+        fprintf(stderr, "Usage: %s <folder_path> <0=approximate|1=exact> -m <matrix.txt> -o <outcome.txt> [-g] [-2] [--reuse]\n", argv[0]);
         return 1;
     }
 
@@ -1662,6 +1890,19 @@ int main(int argc, char *argv[]) {
 
 
 
+    const double delta = 1.0;  
+
+    // specs.txt + a matching kinship cache -> this is a subset run on the reference dataset
+    int use_saved_K = kinship_cache_is_valid(target_dir, (size_t)data->original_sample_size, data->snp_size);
+
+    double *spectral_pheno = NULL;
+    const char *weights_source = "Cholesky solve on K[S,S]";
+    if (reuse_weights && use_saved_K)
+    {
+        spectral_pheno = load_propensity_subset(target_dir, (size_t)data->original_sample_size, data->skipped_samples, (size_t)data->pruned_sample_size);
+        if (spectral_pheno != NULL) weights_source = "reference-run propensities (--reuse)";
+    }
+
     // allocate keep mask for SNP pruning 
     data->snp_keep_mask = (int *)calloc((size_t)data->snp_size, sizeof(int));
     if (data->snp_keep_mask == NULL) 
@@ -1670,11 +1911,16 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    // standardization + monomorphic SNP pruning
-    double *std_matrix = (double *)malloc((size_t)data->snp_size * data->original_sample_size * sizeof(double));
-    if (std_matrix == NULL) {
-        perror("malloc std_matrix");
-        exit(1);
+    // standardization + monomorphic SNP pruning. The standardized matrix (M x N doubles) is only built
+    // when the kinship has to be computed; otherwise only per-SNP mean/std and the validity mask are.
+    double *std_matrix = NULL;
+    if (!use_saved_K)
+    {
+        std_matrix = (double *)malloc((size_t)data->snp_size * (size_t)data->original_sample_size * sizeof(double));
+        if (std_matrix == NULL) {
+            perror("malloc std_matrix");
+            exit(1);
+        }
     }
 
     int n_valid_snps = 0;
@@ -1683,38 +1929,86 @@ int main(int argc, char *argv[]) {
     data->n_valid_snps = n_valid_snps;
     data->valid_snp_indices = collect_valid_snp_indices_for_GRM(data->snp_keep_mask, data->snp_size, &data->n_valid_snps);
 
-    //printf("%d %d\n", data->snp_size, n_valid_snps);
-
-    // GRM uses only valid SNPs 
-    double *GRM = compute_GRM(std_matrix, data->snp_size, data->original_sample_size, 1.0, data->valid_snp_indices, data->n_valid_snps);
-
-    if (GRM == NULL) 
+    double *GRM = NULL;
+    if (!use_saved_K)
     {
-        fprintf(stderr, "compute_GRM failed\n");
+        // reference run: GRM uses only valid SNPs, and is cached for the subset runs
+        GRM = compute_GRM(std_matrix, data->snp_size, data->original_sample_size, 1.0, data->valid_snp_indices, data->n_valid_snps);
+
+        if (GRM == NULL) 
+        {
+            fprintf(stderr, "compute_GRM failed\n");
+            free(std_matrix);
+            exit(1);
+        }
+
         free(std_matrix);
-        exit(1);
+        std_matrix = NULL;
+
+        write_kinship_binary(target_dir, GRM, (size_t)data->original_sample_size);
     }
 
-    //write_kinship(target_dir, GRM, data->original_sample_size);
-
-    double *analyzed_GRM = extract_analyzed_submatrix(GRM, data->original_sample_size, data->skipped_samples, data->pruned_sample_size);
-
-    double *eigvals = (double *)malloc(data->pruned_sample_size * sizeof(double));
-    if (eigvals == NULL) 
+    // K[S,S]: needed for the eigendecomposition handed to GEMMA (exact mode) and whenever the propensities
+    // are not taken from the cache
+    double *analyzed_GRM = NULL;
+    if (exact || spectral_pheno == NULL)
     {
-        perror("malloc eigvals");
-        exit(1);
+        analyzed_GRM = use_saved_K
+            ? read_kinship_submatrix(target_dir, (size_t)data->original_sample_size, data->skipped_samples, (size_t)data->pruned_sample_size)
+            : extract_analyzed_submatrix(GRM, data->original_sample_size, data->skipped_samples, data->pruned_sample_size);
+
+        if (analyzed_GRM == NULL) 
+        {
+            fprintf(stderr, "could not build the analyzed kinship submatrix\n");
+            exit(1);
+        }
     }
 
+    free(GRM);
+    GRM = NULL;
 
-    int info = compute_eigendecomposition(analyzed_GRM, data->pruned_sample_size, eigvals, exact, data);
-    if (info != 0) 
+    double *eigvals = NULL;
+    if (exact)
     {
-        fprintf(stderr, "LAPACKE_dsyevd failed, info=%d\n", info);
+        // GEMMA needs U and Lambda of K[S,S]. (U[S,:] is NOT the eigenbasis of K[S,S]: a new decomposition is required)
+        eigvals = (double *)malloc((size_t)data->pruned_sample_size * sizeof(double));
+        if (eigvals == NULL) 
+        {
+            perror("malloc eigvals");
+            exit(1);
+        }
+
+        int info = compute_eigendecomposition(analyzed_GRM, data->pruned_sample_size, eigvals, exact, data);
+        if (info != 0) 
+        {
+            fprintf(stderr, "LAPACKE_dsyevd failed, info=%d\n", info);
+            exit(1);
+        }
+
+        if (spectral_pheno == NULL) 
+        {
+            weights_source = "eigendecomposition of K[S,S]";
+            spectral_pheno = spectral_transform_phenotype(data->pheno_vector, analyzed_GRM, eigvals, data->pruned_sample_size, delta);
+        }
+    }
+    else if (spectral_pheno == NULL)
+    {
+        // approximate mode: same operator, no eigendecomposition
+        spectral_pheno = spectral_transform_phenotype_cholesky(data->pheno_vector, analyzed_GRM, data->pruned_sample_size, delta);
+    }
+
+    if (spectral_pheno == NULL) 
+    {
+        fprintf(stderr, "propensity computation failed\n");
         exit(1);
     }
 
-    double *spectral_pheno = spectral_transform_phenotype(data->pheno_vector, analyzed_GRM, eigvals, data->pruned_sample_size, 1);
+    if (!use_saved_K)
+        save_propensity_cache(target_dir, spectral_pheno, data->skipped_samples, (size_t)data->original_sample_size);
+
+    printf("Kinship: %s | weights: %s | analyzed samples: %d of %d\n",
+           use_saved_K ? "loaded from cache and subset" : "computed (reference run) and cached",
+           weights_source, data->pruned_sample_size, data->original_sample_size);
 
     double *surprise_scores = compute_clipped_IPW_surprise_score(spectral_pheno, data->pheno_vector, data->pruned_sample_size);
 
@@ -1800,5 +2094,3 @@ int main(int argc, char *argv[]) {
 
     return 0;
 }
-
-
