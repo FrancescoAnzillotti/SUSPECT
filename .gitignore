@@ -8,3 +8,5 @@ simulate_data.sh
 SAIGE/
 plink-ng/
 .vscode/
+simulated*
+simulated*/*

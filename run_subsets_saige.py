@@ -15,6 +15,7 @@
 #   --seed 1 \
 #   --cores 10 \
 #   --reuse \
+#   --exact 0 \
 #   --saige \
 #   --saige-pixi-dir /path/to/your/pixi/project
 
@@ -735,6 +736,12 @@ def main():
     )
 
     p.add_argument(
+        "--exact", type=int, choices=(0, 1), default=0,
+        help="RAFT mode passed to the C binary: 0 = approximate (RAFT alone), "
+             "1 = exact (RAFT followed by GEMMA on the survivors). Default: 0.",
+    )
+
+    p.add_argument(
         "--saige", action="store_true",
         help="Run SAIGE Step 1 + Step 2 for every experiment.",
     )
@@ -770,6 +777,11 @@ def main():
 
     if not 0 < args.saige_alpha < 1:
         raise ValueError("--saige-alpha must be between 0 and 1")
+
+    reuse = args.reuse and args.exact == 0
+
+    if args.reuse and args.exact == 1:
+        print("WARNING: --reuse only applies in approximate mode (--exact 0); ignoring it.")
 
     if shutil.which("taskset") is None:
         raise RuntimeError("taskset was not found in PATH.")
@@ -882,7 +894,7 @@ def main():
 
         rc, elapsed = run_c(
             binary, full_dir, full_matrix, full_pheno,
-            args.genotype_file, args.pheno12, 0,
+            args.genotype_file, args.pheno12, args.exact,
             cwd=results, n_cores=args.cores,
         )
 
@@ -962,7 +974,7 @@ def main():
 
                         rc, elapsed = run_c(
                             binary, run_dir, full_matrix, pheno_out,
-                            args.genotype_file, args.pheno12, 0,
+                            args.genotype_file, args.pheno12, args.exact,
                             cwd=results, n_cores=args.cores, reuse=args.reuse,
                         )
 

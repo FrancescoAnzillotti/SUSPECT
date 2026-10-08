@@ -4,14 +4,28 @@ RAFT is a fast **pre-screening** tool for association testing when samples are r
 
 Instead of fitting a Linear Mixed Model (LMM) for every candidate, RAFT computes a cheap weighted Z-score for each one and keeps only the promising candidates. An exact LMM ([GEMMA](https://github.com/genetics-statistics/GEMMA)) can then be run on the survivors only. RAFT is also built for the **subset problem**: when you want to analyze only some of the samples, the expensive work from the full run is reused instead of recomputed.
 
-This repository contains the code used in the paper:
+This repository contains (.c and .h files are inside the `src` folder):
 
 | File | What it is |
 |---|---|
-| `z_score_general.c` | The RAFT implementation (C). |
+| `raft.h` | Shared data structures, constants, and function declarations used by all C modules. |
+| `main.c` | Program entry point and end-to-end RAFT workflow. |
+| `time.c` | Monotonic elapsed-time measurement. |
+| `utils.c` | Generic utilities, allocation helpers, linked-list management, and path handling. |
+| `data_io.c` | Outcome/matrix input parsing plus RAFT/GEMMA intermediate-file output and subset metadata (`specs.txt`). |
+| `standardization.c` | Candidate statistics, standardization and validity filtering. |
+| `kinship.c` | Relatedness matrix construction, analyzed submatrices, eigendecomposition, and matrix reuse handling. |
+| `propensity.c` | Outcome propensity transforms, Cholesky/eigendecomposition-based weights, IPW surprise scores, and propensity-cache handling. |
+| `zscore.c` | Weighted association counts, RAFT Z-score calculation, thresholds, and Z-score output. |
+| `gemma.c` | GEMMA result parsing and matching/false-negative checks. |
 | `run_subsets_saige.py` | Python wrapper that runs the benchmark: full run, then many random sample subsets, optionally against SAIGE. |
-| `Makefile` | Makefile to automatically compile the C code. |
+| `Makefile` | Builds all C modules and links them into the `z_score_general` executable. |
 ---
+
+## C source layout
+
+The C implementation is intentionally split by semantic responsibility rather than by individual function size. All modules include the single shared header `raft.h`, which contains the cross-module function declarations.
+
 
 ## How it works
 
@@ -39,7 +53,7 @@ A **subset run** with these files present does not rebuild `K`. It only cuts out
 - recomputes the weights with one Cholesky solve (default), or
 - looks up the weights from the full run (`--reuse`, fastest).
 
-A subset is defined by setting the outcome of the removed samples to `NA`. The genotype matrix is never changed.
+A subset is defined by setting the outcome of the removed samples to `NA`. The matrix is never changed.
 
 ---
 
@@ -70,8 +84,19 @@ The C program calls the provided GEMMA binary as `../../gemma` from inside each 
 
 ```
 .
-├── gemma                  <- GEMMA binary 
+├── gemma                  <- GEMMA binary
 ├── z_score_general        <- compiled RAFT
+├── src/
+│   ├── raft.h                 <- shared declarations/types
+│   ├── main.c
+│   ├── time.c 
+│   ├── utils.c
+│   ├── data_io.c
+│   ├── standardization.c
+│   ├── kinship.c
+│   ├── propensity.c
+│   ├── zscore.c
+│   └──  gemma.c
 ├── run_subsets_saige.py
 ├── genomics_data/
 │   ├── geno.subset.txt
@@ -79,6 +104,8 @@ The C program calls the provided GEMMA binary as `../../gemma` from inside each 
 └── results/               <- created by the wrapper
     ├── FULL/
     └── remove10_cases25_rep1/ ...
+
+
 ```
 
 ---
@@ -107,7 +134,7 @@ Values are 0, 1, 2 (dosages in between are rounded) or `NA`.
 ```bash
 mkdir -p results/FULL
 cd results
-../z_score_general FULL 0 -m /abs/path/geno.txt -o /abs/path/pheno.txt -g -2
+../z_score_general FULL 0 -m /abs/path/matrix.txt -o /abs/path/outcome.txt -g -2
 ```
 
 Usage:
@@ -133,7 +160,7 @@ mkdir subset1
 for f in specs.txt C_COMPUTED_kinship_matrix.bin C_COMPUTED_propensity.bin; do
   ln -s "$PWD/FULL/$f" subset1/$f
 done
-../z_score_general subset1 0 -m /abs/path/geno.txt -o /abs/path/pheno_with_NA.txt -g -2 --reuse
+../z_score_general subset1 0 -m /abs/path/matrix.txt -o /abs/path/outcome_with_NA.txt -g -2 --reuse
 ```
 
 ### 3. Run the whole benchmark with the wrapper
@@ -163,6 +190,7 @@ The wrapper runs the full dataset first, then every combination of removal perce
 | `--replicates` | Random repetitions per combination. |
 | `--seed` | Seed for choosing the removed samples. |
 | `--reuse` | Pass `--reuse` to the C binary (reuse full-run weights). |
+| `--exact` | Either 0 (approximate mode) or 1 (exact mode). If `--reuse` is set but `--exact` is 1, `--reuse` is ignored|
 | `--saige` | Also run SAIGE (Step 1 + Step 2) on every subset. Needs `-g`. |
 | `--saige-pixi-dir` | Folder with the `pixi.toml` that has SAIGE installed. |
 | `--saige-alpha` | Significance level for the SAIGE Bonferroni threshold (default 0.05). |
@@ -189,7 +217,7 @@ Inside each run folder (e.g. `results/FULL`):
 | `exact/` | Exact mode only: pruned data, eigen-decomposition and GEMMA results on the survivors. |
 | `specs.txt`, `*.bin` | Reference-run caches (see "Subset runs"). |
 
-Inside the directory where the binary is launched (`results/` when using the wrapper), three logs are appended to:
+Inside the directory where the binary is launched, three logs are generated:
 
 - `relevant_log.csv`: how many candidates RAFT and GEMMA flag
 - `time_log.csv`: running times in milliseconds
