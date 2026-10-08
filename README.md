@@ -150,6 +150,8 @@ Usage:
 | `-g` | Matrix is in BIMBAM format (two allele columns). |
 | `-2` | Outcome is coded 1/2 instead of 0/1. |
 | `--reuse` | On a subset run, take the weights from the full run instead of recomputing them. |
+| `--no-baseline` | Skips the GEMMA baseline before RAFT execution |
+
 
 ### 2. Run RAFT on a subset by hand
 
