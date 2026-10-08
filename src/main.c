@@ -21,6 +21,7 @@ int main(int argc, char *argv[]) {
     int exact = -1;
     int pheno_offset = 0; // default: phenotype file already 0/1, no shift
     int reuse_weights = 0; // --reuse: subset run takes the reference-run propensities instead of recomputing them from K[S,S]
+    int run_baseline = 1;   // --no-baseline skips the full GEMMA run
 
 
     for (int i = 1; i < argc; i++) {
@@ -33,6 +34,9 @@ int main(int argc, char *argv[]) {
         } 
         else if (strcmp(argv[i], "--reuse") == 0) {
             reuse_weights = 1;
+        }
+        else if (strcmp(argv[i], "--no-baseline") == 0) {
+            run_baseline = 0;
         }
         else if (strcmp(argv[i], "-2") == 0) {
             pheno_offset = 1; // phenotype file is 1/2-coded, subtract 1 to normalize
@@ -77,39 +81,44 @@ int main(int argc, char *argv[]) {
 
 
     // ------------------------------------------------ FULL AND EXACT GEMMA ---------------------------------------------
-    // Construct gemma commands
-    char gemma_cmd1[16384];
-    char gemma_cmd2[16384];
+
+    char **gemma_relevant = NULL;
+    if(run_baseline)
+    {
+        // Construct gemma commands
+        char gemma_cmd1[16384];
+        char gemma_cmd2[16384];
 
 
-    snprintf(gemma_cmd1, sizeof(gemma_cmd1), 
-        " cd %s && ../../gemma -g %s -p %s -gk 2 -maf 0 -miss 1 -o kinship > /dev/null 2>&1",
-        target_dir, matrix_abs, outcome_abs);
-    //snprintf(gemma_cmd2, sizeof(gemma_cmd2), 
-    //    "cd %s && /home/francesco/anaconda3/envs/gwas_test/bin/gemma -g ./matrix.txt -p ./outcome_vector.txt -a ./anno.subset.txt -k output/kinship.sXX.txt -lmm 4 -n 1 -o gemma_output > /dev/null 2>&1", target_dir); // ");
+        snprintf(gemma_cmd1, sizeof(gemma_cmd1), 
+            " cd %s && ../../gemma -g %s -p %s -gk 2 -maf 0 -miss 1 -o kinship > /dev/null 2>&1",
+            target_dir, matrix_abs, outcome_abs);
+        //snprintf(gemma_cmd2, sizeof(gemma_cmd2), 
+        //    "cd %s && /home/francesco/anaconda3/envs/gwas_test/bin/gemma -g ./matrix.txt -p ./outcome_vector.txt -a ./anno.subset.txt -k output/kinship.sXX.txt -lmm 4 -n 1 -o gemma_output > /dev/null 2>&1", target_dir); // ");
 
-    snprintf(gemma_cmd2, sizeof(gemma_cmd2), 
-        "cd %s && ../../gemma -g %s -p %s -k output/kinship.sXX.txt -maf 0 -miss 1 -lmm 4 -n 1 -o gemma_output > /dev/null 2>&1",
-        target_dir, matrix_abs, outcome_abs);
+        snprintf(gemma_cmd2, sizeof(gemma_cmd2), 
+            "cd %s && ../../gemma -g %s -p %s -k output/kinship.sXX.txt -maf 0 -miss 1 -lmm 4 -n 1 -o gemma_output > /dev/null 2>&1",
+            target_dir, matrix_abs, outcome_abs);
 
-    printf("Executing GEMMA kinship...\n");
-    int result = system(gemma_cmd1);
-    if(result == -1) {
-        perror("Failed to execute gemma kinship command");
-        exit(EXIT_FAILURE);
+        printf("Executing GEMMA kinship...\n");
+        int result = system(gemma_cmd1);
+        if(result == -1) {
+            perror("Failed to execute gemma kinship command");
+            exit(EXIT_FAILURE);
+        }
+        
+        printf("Executing GEMMA association testing...\n");
+        result = system(gemma_cmd2);
+        if(result == -1) {
+            perror("Failed to execute gemma command");
+            exit(EXIT_FAILURE);
+        }
+
+        double t_gemma_end = now_seconds();
+        char **gemma_relevant = read_gemma_relevant_snps(target_dir, gemma_thr, relevant_log_file, 0);
+        printf("Time taken for full and exact GEMMA execution: %.1f milliseconds\n\n", (t_gemma_end - t0));
+        fprintf(time_log_file, "%s\tGEMMA\t%.1f\tms\n", target_dir, (t_gemma_end - t0));
     }
-    
-    printf("Executing GEMMA association testing...\n");
-    result = system(gemma_cmd2);
-    if(result == -1) {
-        perror("Failed to execute gemma command");
-        exit(EXIT_FAILURE);
-    }
-
-    double t_gemma_end = now_seconds();
-    char **gemma_relevant = read_gemma_relevant_snps(target_dir, gemma_thr, relevant_log_file, 0);
-    printf("Time taken for full and exact GEMMA execution: %.1f milliseconds\n\n", (t_gemma_end - t0));
-    fprintf(time_log_file, "%s\tGEMMA\t%.1f\tms\n", target_dir, (t_gemma_end - t0));
     
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -240,7 +249,8 @@ int main(int argc, char *argv[]) {
     fprintf(time_log_file, "%s\tZ_SCORE\t%.1f\tms\n", target_dir, (t_zscore_end - t_zscore_start));
     printf("Time taken for EIGEN-SHRUNK Z-SCORE APPROACH on folder %s: %.1f milliseconds\n", target_dir, (t_zscore_end - t_zscore_start));
 
-    match_z_scores_with_gemma(z_score_list, gemma_relevant, fn_log_file, data);
+    if(gemma_relevant) 
+        match_z_scores_with_gemma(z_score_list, gemma_relevant, fn_log_file, data);
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -270,7 +280,8 @@ int main(int argc, char *argv[]) {
 
 
         after_z_gemma_relevant = read_gemma_relevant_snps(target_dir, gemma_thr, relevant_log_file, 1);
-        match_gemmas(after_z_gemma_relevant, gemma_relevant, fn_log_file, data);
+        if(gemma_relevant) 
+            match_gemmas(after_z_gemma_relevant, gemma_relevant, fn_log_file, data);
 
         free(after_z_gemma_relevant);
     }

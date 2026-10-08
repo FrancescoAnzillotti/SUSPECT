@@ -127,7 +127,7 @@ def write_pheno(pheno, keep, pheno_out):
 # ============================================================
 
 def run_c(binary, run_dir, matrix, pheno, genotype, pheno12, exact, cwd,
-          n_cores=10, reuse=False):
+          n_cores=10, reuse=False, no_baseline=False):
     run_dir.mkdir(parents=True, exist_ok=True)
 
     cmd = [
@@ -145,6 +145,9 @@ def run_c(binary, run_dir, matrix, pheno, genotype, pheno12, exact, cwd,
 
     if reuse:
         cmd.append("--reuse")
+
+    if no_baseline:
+        cmd.append("--no-baseline")
 
     env = {
         **os.environ,
@@ -742,6 +745,11 @@ def main():
     )
 
     p.add_argument(
+        "--no-baseline", action="store_true",
+        help="Do not run the baseline method (GEMMA) for comparison.",
+    )
+
+    p.add_argument(
         "--saige", action="store_true",
         help="Run SAIGE Step 1 + Step 2 for every experiment.",
     )
@@ -895,7 +903,7 @@ def main():
         rc, elapsed = run_c(
             binary, full_dir, full_matrix, full_pheno,
             args.genotype_file, args.pheno12, args.exact,
-            cwd=results, n_cores=args.cores,
+            cwd=results, n_cores=args.cores, no_baseline=args.no_baseline
         )
 
         if rc != 0:
@@ -975,7 +983,7 @@ def main():
                         rc, elapsed = run_c(
                             binary, run_dir, full_matrix, pheno_out,
                             args.genotype_file, args.pheno12, args.exact,
-                            cwd=results, n_cores=args.cores, reuse=args.reuse,
+                            cwd=results, n_cores=args.cores, reuse=args.reuse, no_baseline=args.no_baseline
                         )
 
                         saige_metrics = (

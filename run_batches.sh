@@ -116,7 +116,8 @@ for dir in "${folders[@]}"; do
         --cores 10 \
         -g \
         --reuse \
-       --exact 0 
+       --exact 0 \
+       --no-baseline
 
     then
         # Move results into the analyzed folder
