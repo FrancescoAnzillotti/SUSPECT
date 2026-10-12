@@ -31,13 +31,12 @@ typedef struct
     char *folder_name;
     int *pheno_vector;
     int pruned_sample_size;
-    //int *geno_matrix;            // pruned, integer
     double *full_geno_matrix;    // full dosages
     int snp_size;
 
-    int *snp_keep_mask;          // 1 = keep SNP, 0 = drop SNP
-    int *valid_snp_indices;      // raw SNP row indices that survived filtering
-    int n_valid_snps;            // number of surviving SNPs
+    int *snp_keep_mask;          // 1 = keep, 0 = drop
+    int *valid_snp_indices;      // raw row indices that survived filtering
+    int n_valid_snps;            // number of surviving
 
     int *skipped_samples;        // keep mask for samples
     int original_sample_size;
@@ -58,7 +57,6 @@ typedef struct node_z_score
     struct node_z_score *next;
 } node_z_score;
 
-/* OpenBLAS helpers retained from the original implementation. */
 extern void openblas_set_num_threads(int);
 extern int openblas_get_num_threads(void);
 
@@ -70,7 +68,6 @@ int is_directory(const char *path);
 int is_integer_and_positive(int value);
 int parse_double_token(const char *token, double *out);
 int *allocate_pheno_vector(void);
-//int *allocate_geno_matrix(int pruned_sample_size, int n_snps);
 void print_array(int *array, int length);
 void free_z_score_list(node_z_score *head);
 void free_mem_close_files(FILE *geno, FILE *pheno, folder_geno_pheno *data, node_z_score *head);
@@ -98,8 +95,6 @@ int *sample_snp_row_indices(int snp_size, double sample_fraction, int *sampled_s
 double *extract_subset_std_matrix(const double *std_matrix, int original_sample_size, const int *sampled_snp_indices, int sampled_snp_size);
 
 /* kinship.c */
-//void compute_grm_CALL(double *subset_std_matrix, int sampled_snp_size, int original_sample_size, double *grm, int m_divisor);
-//double *compute_GRM(const double *std_matrix, int snp_size, int original_sample_size, double sample_fraction, const int *valid_snp_indices, int n_valid_snps);
 double *compute_GRM_blocked(const double *full_geno, int original_sample_size, const double *means, const double *stds, double sample_fraction, const int *valid_snp_indices, int n_valid_snps);
 double *extract_analyzed_submatrix(const double *full_matrix, int full_n, const int *keep_mask, int pruned_n);
 void write_eigen_decomposition_to_file(double *U, double *eigvals, int n, const char *folder_path);
@@ -124,7 +119,6 @@ double *load_propensity_subset(const char *folder_path, size_t original_sample_s
 double *spectral_transform_phenotype_cholesky(int *pheno_vector, double *analyzed_GRM, int pruned_sample_size, double delta);
 
 /* zscore.c */
-//void compute_four_counts(folder_geno_pheno *data, int snp_index, double *counts, char *snp_col, double *surprise_scores);
 void compute_four_counts(folder_geno_pheno *data, int snp_index, double *counts, double *surprise_scores);
 double z_threshold_for_n(int n_snps);
 double gemma_threshold_for_n(int n_snps);

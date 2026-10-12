@@ -3,106 +3,6 @@
 
 /* GRM construction, analyzed submatrices, eigendecomposition, and kinship cache. */
 
-/*----------------------------------------------------------
-  Compute the Genomic Relationship Matrix
-
-      GRM = (1/m) X^TX
-
-  Input:
-      subset_std_matrix
-      Shape: sampled_snp_size × original_sample_size
-
-  Output:
-      grm
-      Shape: original_sample_size × original_sample_size
-----------------------------------------------------------*/
-
-// void compute_grm_CALL(double *subset_std_matrix, int sampled_snp_size, int original_sample_size, double *grm, int m_divisor)
-// {
-//     cblas_dgemm(
-//         CblasRowMajor,
-//         CblasTrans,
-//         CblasNoTrans,
-//         original_sample_size,
-//         original_sample_size,
-//         sampled_snp_size,
-//         1.0,
-//         subset_std_matrix,
-//         original_sample_size,
-//         subset_std_matrix,
-//         original_sample_size,
-//         0.0,
-//         grm,
-//         original_sample_size
-//     );
-
-//     double inv = 1.0 / (double)m_divisor;
-//     for (size_t i = 0; i < (size_t)original_sample_size * (size_t)original_sample_size; i++) 
-//     {
-//         grm[i] *= inv;
-//     }
-// }
-
-
-
-// double *compute_GRM(const double *std_matrix, int snp_size, int original_sample_size, double sample_fraction, const int *valid_snp_indices, int n_valid_snps)
-// {
-//     double *GRM = (double *)calloc((size_t)original_sample_size * original_sample_size, sizeof(double));
-//     if (GRM == NULL) return NULL;
-
-
-//     if (sample_fraction == 1.0) {
-
-//         /* Rows of std_matrix belonging to invalid SNPs are all zeros (see standardize_snp_matrix_row), so the
-//            product over the whole matrix equals the product over the valid rows only: no copy of the standardized
-//            matrix is needed. SYRK fills only the upper triangle (half the flops of GEMM); it is scaled and
-//            mirrored in a single pass below. */
-//         cblas_dsyrk(CblasRowMajor,
-//                     CblasUpper,
-//                     CblasTrans,
-//                     original_sample_size,
-//                     snp_size,
-//                     1.0,
-//                     std_matrix,
-//                     original_sample_size,
-//                     0.0,
-//                     GRM,
-//                     original_sample_size);
-
-//         double inv = 1.0 / (double)n_valid_snps;
-//         size_t n = (size_t)original_sample_size;
-
-//         #pragma omp parallel for schedule(dynamic, 16)
-//         for (size_t i = 0; i < n; i++)
-//         {
-//             for (size_t j = i; j < n; j++)
-//             {
-//                 double v = GRM[i * n + j] * inv;
-//                 GRM[i * n + j] = v;
-//                 GRM[j * n + i] = v;
-//             }
-//         }
-//         return GRM;
-//     }
-
-//     int sampled_snp_size = 0;
-//     int *sampled_snp_indices = sample_snp_row_indices_from_valid(valid_snp_indices, n_valid_snps, sample_fraction, &sampled_snp_size, 42);
-
-//     if (sampled_snp_indices == NULL || sampled_snp_size <= 0) 
-//     {
-//         free(GRM);
-//         return NULL;
-//     }
-
-//     double *subset_std_matrix = extract_subset_std_matrix(std_matrix, original_sample_size, sampled_snp_indices, sampled_snp_size);
-
-//     compute_grm_CALL(subset_std_matrix, sampled_snp_size, original_sample_size, GRM, sampled_snp_size);
-
-//     free(sampled_snp_indices);
-//     free(subset_std_matrix);
-//     return GRM;
-// }
-
 
 double *compute_GRM_blocked(const double *full_geno, int original_sample_size, const double *means, const double *stds, double sample_fraction, const int *valid_snp_indices, int n_valid_snps)
 {
@@ -142,10 +42,10 @@ double *compute_GRM_blocked(const double *full_geno, int original_sample_size, c
             double *dst = block + r * n;
             double mu = means[j], sd = stds[j];
             for (size_t i = 0; i < n; i++)
-                dst[i] = (src[i] >= 0.0) ? (src[i] - mu) / sd : 0.0;   /* missing -> 0, as before */
+                dst[i] = (src[i] >= 0.0) ? (src[i] - mu) / sd : 0.0;   // missing -> 0 
         }
 
-        /* beta = 1.0: accumulate this block into the upper triangle */
+        // beta = 1.0: accumulate this block into the upper triangle 
         cblas_dsyrk(CblasRowMajor, CblasUpper, CblasTrans,
                     (int)n, (int)rows, 1.0, block, (int)n, 1.0, GRM, (int)n);
     }

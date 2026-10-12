@@ -19,7 +19,7 @@ int main(int argc, char *argv[]) {
     const char *outcome_path = NULL;
     int is_genotype_file = 0;
     int exact = -1;
-    int pheno_offset = 0; // default: phenotype file already 0/1, no shift
+    int pheno_offset = 0; // default: outcome file already 0/1, no shift
     int reuse_weights = 0; // --reuse: subset run takes the reference-run propensities instead of recomputing them from K[S,S]
     int run_baseline = 1;   // --no-baseline skips the full GEMMA run
 
@@ -39,7 +39,7 @@ int main(int argc, char *argv[]) {
             run_baseline = 0;
         }
         else if (strcmp(argv[i], "-2") == 0) {
-            pheno_offset = 1; // phenotype file is 1/2-coded, subtract 1 to normalize
+            pheno_offset = 1; // outcome file is 1/2-coded, subtract 1 to normalize
         } else if (target_dir == NULL) {
             target_dir = argv[i];
         } else if (exact == -1) {
@@ -93,9 +93,7 @@ int main(int argc, char *argv[]) {
         snprintf(gemma_cmd1, sizeof(gemma_cmd1), 
             " cd %s && ../../gemma -g %s -p %s -gk 2 -maf 0 -miss 1 -o kinship > /dev/null 2>&1",
             target_dir, matrix_abs, outcome_abs);
-        //snprintf(gemma_cmd2, sizeof(gemma_cmd2), 
-        //    "cd %s && /home/francesco/anaconda3/envs/gwas_test/bin/gemma -g ./matrix.txt -p ./outcome_vector.txt -a ./anno.subset.txt -k output/kinship.sXX.txt -lmm 4 -n 1 -o gemma_output > /dev/null 2>&1", target_dir); // ");
-
+        
         snprintf(gemma_cmd2, sizeof(gemma_cmd2), 
             "cd %s && ../../gemma -g %s -p %s -k output/kinship.sXX.txt -maf 0 -miss 1 -lmm 4 -n 1 -o gemma_output > /dev/null 2>&1",
             target_dir, matrix_abs, outcome_abs);
@@ -143,7 +141,7 @@ int main(int argc, char *argv[]) {
         if (spectral_pheno != NULL) weights_source = "reference-run propensities (--reuse)";
     }
 
-    // allocate keep mask for SNP pruning 
+    // allocate keep mask for candidate pruning 
     data->snp_keep_mask = (int *)calloc((size_t)data->snp_size, sizeof(int));
     if (data->snp_keep_mask == NULL) 
     {
@@ -264,7 +262,6 @@ int main(int argc, char *argv[]) {
     if(exact)
     {
         char exact_after_zscore_cmd[16384];
-        //snprintf(exact_after_zscore_cmd, sizeof(exact_after_zscore_cmd), "cd %s/exact && /home/francesco/anaconda3/envs/gwas_test/bin/gemma -g ./C_pruned_geno_matrix.txt -p ./C_pruned_pheno.txt -u eigenvectors.txt -d eigenvalues.txt -lmm 4 -n 1 -o gemma_output > /dev/null 2>&1", target_dir);
         snprintf(exact_after_zscore_cmd, sizeof(exact_after_zscore_cmd), "cd %s/exact && ../../../gemma -g ./C_pruned_geno_matrix.txt -p ./C_pruned_pheno.txt -u eigenvectors.txt -d eigenvalues.txt -maf 0 -miss 1 -lmm 4 -n 1 -o gemma_output > /dev/null 2>&1", target_dir);
         int result = system(exact_after_zscore_cmd);
         if(result == -1) {
@@ -293,7 +290,6 @@ int main(int argc, char *argv[]) {
     {
         free(data->pheno_vector);
         free(data->folder_name);
-        //free(data->geno_matrix);
         free(data->full_geno_matrix); 
         free(data->skipped_samples);
         free(data->snp_keep_mask);

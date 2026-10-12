@@ -66,9 +66,7 @@ int *sample_snp_row_indices_from_valid(const int *valid_snp_indices, int n_valid
     return sampled;
 }
 
-void process_snp_row(double *row, int original_sample_size, int *skipped_samples,
-                     double *mean_incl_skipped, double *std_incl_skipped,
-                     double *mean_no_skipped, double *std_no_skipped)
+void process_snp_row(double *row, int original_sample_size, int *skipped_samples, double *mean_incl_skipped, double *std_incl_skipped, double *mean_no_skipped, double *std_no_skipped)
 {
     double sum_incl = 0.0;
     double sum_sq_incl = 0.0;
@@ -202,18 +200,6 @@ void standardize_snp_matrix(folder_geno_pheno *data, double *std_matrix, int *n_
 
 
 
-/*----------------------------------------------------------
-  Randomly sample SNP row indices
-
-  Input:
-      snp_size          Total number of SNPs (rows)
-      sample_fraction   e.g. 0.20 for 20%
-      seed              Random seed
-
-  Output:
-      sampled_snp_size  Number of sampled SNPs
-      return            Array of sampled row indices
-----------------------------------------------------------*/
 int *sample_snp_row_indices(int snp_size, double sample_fraction, int *sampled_snp_size, unsigned int seed)
 {
     *sampled_snp_size = (int)(sample_fraction * snp_size);
@@ -242,20 +228,6 @@ int *sample_snp_row_indices(int snp_size, double sample_fraction, int *sampled_s
 }
 
 
-
-/*----------------------------------------------------------
-  Extract only the sampled SNPs.
-
-  Input:
-      std_matrix          Full standardized matrix
-                          Shape: snp_size × original_sample_size
-
-      sampled_snp_indices Row indices returned above
-
-  Output:
-      subset_std_matrix
-      Shape: sampled_snp_size × original_sample_size
-----------------------------------------------------------*/
 
 double *extract_subset_std_matrix(const double *std_matrix, int original_sample_size, const int *sampled_snp_indices, int sampled_snp_size)
 {

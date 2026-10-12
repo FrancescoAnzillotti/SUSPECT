@@ -2,7 +2,6 @@
 
 /* phenotype transforms, IPW surprise weights, and propensity cache. */
 
-/* Mean of phenotype vector */
 double mean_vector( int *y, int pruned_sample_size)
 {
     double s = 0.0;
@@ -24,14 +23,7 @@ int count_cases(int *y, int pruned_sample_size)
 }
 
 
-/*
-  Computes:
-      out = mean_y + U * D * U^T * (y - mean_y)
 
-  where D[i] = eigvals[i] / (eigvals[i] + delta)
-
-  U is row-major, size n x n
-*/
 double *spectral_transform_phenotype(int *pheno_vector, const double *U, const double *eigvals, int pruned_sample_size, double delta)
 {
     double mean_y = mean_vector(pheno_vector, pruned_sample_size);
@@ -190,17 +182,6 @@ double *load_propensity_subset(const char *folder_path, size_t original_sample_s
     free(p_full);
     return p;
 }
-
-/*
-  Same propensity as spectral_transform_phenotype, WITHOUT an eigendecomposition:
-
-      p = mean_y + K (K + delta I)^-1 (y - mean_y)  =  y - delta * (K + delta I)^-1 (y - mean_y)
-
-  K + delta I is symmetric positive definite (delta > 0), so a single Cholesky solve (n^3/3 flops, no
-  eigenvectors) gives exactly U diag(L/(L+delta)) U^T (y - mean_y) + mean_y. A row-major symmetric matrix is
-  also its own column-major transpose, hence LAPACK_COL_MAJOR and no internal transposition copy.
-  The kinship is overwritten by its Cholesky factor.
-*/
 
 
 double *spectral_transform_phenotype_cholesky(int *pheno_vector, double *analyzed_GRM, int pruned_sample_size, double delta)

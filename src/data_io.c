@@ -101,7 +101,6 @@ void *read_geno_matrix(FILE *geno_file, int *pruned_sample_size, int *keep_mask,
     size_t n_orig = (size_t)(*original_sample_size);
     size_t n_pruned = (size_t)(*pruned_sample_size);
 
-    //int *geno_matrix = allocate_geno_matrix(*pruned_sample_size, *snp_size);
 
     double *full_geno = malloc(n_snps * n_orig * sizeof(double));
     if (!full_geno) 
@@ -144,12 +143,6 @@ void *read_geno_matrix(FILE *geno_file, int *pruned_sample_size, int *keep_mask,
 
             full_geno[(size_t)snp_index * n_orig + (size_t)original_sample_index] = g_val;
 
-            // if (keep_mask[original_sample_index]) 
-            // {
-            //     int g_int = (g_val < 0.0) ? -1 : (int)(g_val + 0.5);
-            //     geno_matrix[(size_t)snp_index * n_pruned + (size_t)pruned_sample_index] = g_int;
-            //     pruned_sample_index++;
-            // }
 
             original_sample_index++;
             token = strtok_r(NULL, " ,\t\r\n", &saveptr);
@@ -214,7 +207,7 @@ folder_geno_pheno *read_files(char *folder_path, const char *matrix_path, const 
 
 void write_geno_col_to_file(FILE *output_file, folder_geno_pheno *data, int snp_index, char *snp_name)
 {
-    // Write SNP header columns
+    // Write candidate header columns
     fprintf(output_file, "%s\tA\tT", snp_name);
     
     size_t base = (size_t)snp_index * (size_t)data->original_sample_size;
@@ -258,8 +251,7 @@ void write_specs_if_absent(const char *folder_path, int n_samples, int n_candida
     char specs_path[8192];
     snprintf(specs_path, sizeof(specs_path), "%s/specs.txt", folder_path);
 
-    if (access(specs_path, F_OK) == 0) return; // a reference run already exists, don't clobber it
-
+    if (access(specs_path, F_OK) == 0) return; // a reference run already exists
     FILE *specs_file = fopen(specs_path, "w");
     if (specs_file == NULL) { perror(specs_path); return; }
 

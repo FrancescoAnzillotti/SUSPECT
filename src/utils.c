@@ -42,18 +42,6 @@ int * allocate_pheno_vector(void)
     return pheno;
 }
 
-// int *allocate_geno_matrix(int pruned_sample_size, int n_snps)
-// {
-//     int *geno = (int *)malloc((size_t)pruned_sample_size * (size_t)n_snps * sizeof(int));
-
-//     if (geno == NULL) 
-//     {
-//         perror("Initial genotype memory allocation failed");
-//         exit(1);
-//     }
-
-//     return geno;
-// }
 
 void print_array(int *array, int length)
 {
@@ -119,7 +107,7 @@ void resolve_input_path(const char *target_dir, const char *given_path, char *ou
     char joined[PATH_MAX];
 
     if (given_path[0] == '/') {
-        snprintf(joined, sizeof(joined), "%s", given_path);   // already absolute, use as-is
+        snprintf(joined, sizeof(joined), "%s", given_path);   // already absolute
     } else {
         snprintf(joined, sizeof(joined), "%s/%s", target_dir, given_path); // relative -> inside target_dir, matching every other file in this pipeline
     }
