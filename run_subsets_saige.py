@@ -1043,36 +1043,26 @@ def main():
         "remaining_samples", "input_snps",
 
         # Z-score
-        "zscore_processed_snps", "zscore_relevant_snps", "zscore_percentage",
-        "zscore_retained_percentage", "variance_retention_percentage",
-        "variance_removed_percentage",
+        "zscore_processed_snps", "zscore_relevant_snps",
+        "zscore_retained_percentage",
 
         # GEMMA
         "gemma_tested_snps", "gemma_relevant_snps", "gemma_percentage",
         "gemma_after_zscore_tested_snps", "gemma_after_zscore_relevant_snps",
         "gemma_candidate_retention_percentage",
-        "gemma_candidate_reduction_percentage",
 
         # C / GEMMA accuracy
         "false_negatives_total", "false_negative_rate", "recall",
 
         # Times
         "gemma_time_ms", "zscore_time_ms", "gemma_after_zscore_time_ms",
-        "zscore_plus_gemma_time_ms", "zscore_speedup_vs_gemma",
-        "total_pipeline_speedup_vs_gemma",
+        "zscore_plus_gemma_time_ms",
 
         ## SAIGE
-        "saige_prepare_time_ms",
         "saige_time_ms",
-        "saige_total_time_ms",
         "saige_relevant_snps",
         "saige_percentage",
-        "saige_accuracy",
-        "saige_step1_return_code",
-        "saige_step2_return_code",
-
-        # Python/C status
-        "python_wall_time_seconds", "return_code",
+        "saige_accuracy"
     ]
 
     fieldnames = [
@@ -1082,7 +1072,7 @@ def main():
 
     for report, delimiter in (("report.csv", ","), ("report.tsv", "\t")):
         with open(results / report, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter=delimiter)
+            writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter=delimiter,  extrasaction="ignore")
             writer.writeheader()
             writer.writerows(final_results)
 

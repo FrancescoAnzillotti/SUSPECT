@@ -173,13 +173,14 @@ python3 run_subsets_saige.py \
   --pheno   ./genomics_data/pheno.subset.txt \
   --binary  ./z_score_general \
   --workdir ./workdir \
-  --results ./results \
+  --results ./results_approx \
   -g -2 \
   --removal 10,30,50,70 \
   --removed-cases 25,50,75 \
   --replicates 3 \
-  --seed 1 \
+  --seed 42 \
   --cores 10 \
+  --exact 0 \
   --reuse
 ```
 
@@ -193,6 +194,7 @@ The wrapper runs the full dataset first, then every combination of removal perce
 | `--seed` | Seed for choosing the removed samples. |
 | `--reuse` | Pass `--reuse` to the C binary (reuse full-run weights). |
 | `--exact` | Either 0 (approximate mode) or 1 (exact mode). If `--reuse` is set but `--exact` is 1, `--reuse` is ignored|
+| `--no-baseline` | Skips the GEMMA baseline before RAFT execution |
 | `--saige` | Also run SAIGE (Step 1 + Step 2) on every subset. Needs `-g`. |
 | `--saige-pixi-dir` | Folder with the `pixi.toml` that has SAIGE installed. |
 | `--saige-alpha` | Significance level for the SAIGE Bonferroni threshold (default 0.05). |
@@ -231,9 +233,8 @@ The wrapper merges everything into **`results/report.csv`** and **`results/repor
 |---|---|
 | `zscore_retained_percentage` | % of candidates RAFT keeps. |
 | `recall`, `false_negative_rate` | How many of GEMMA's hits RAFT keeps / loses. |
-| `gemma_time_ms`, `zscore_time_ms` | GEMMA alone vs. RAFT alone. |
+| `gemma_time_ms`, `zscore_time_ms` | GEMMA alone vs. RAFT alone (approx. or exact). |
 | `zscore_plus_gemma_time_ms` | RAFT followed by GEMMA (exact mode only). |
-| `zscore_speedup_vs_gemma` | `gemma_time_ms / zscore_time_ms`. |
 | `saige_time_ms`, `saige_accuracy` | SAIGE time, and % of GEMMA's hits that SAIGE also flags (with `--saige`). |
 
 ---
@@ -242,4 +243,3 @@ The wrapper merges everything into **`results/report.csv`** and **`results/repor
 
 - Always start from a clean reference folder. If `specs.txt` already exists in a folder, the program treats it as a subset run. (The wrapper deletes stale reference files for you.)
 - Significance thresholds (both RAFT's Z threshold and the GEMMA `-log10(p)` threshold used for comparison) are set automatically from the number of candidates.
-- The full-run memory use is roughly a few copies of the `M × N` matrix as doubles, so large `M` needs a large machine.

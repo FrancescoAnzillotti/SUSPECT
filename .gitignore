@@ -10,3 +10,7 @@ plink-ng/
 .vscode/
 simulated*
 simulated*/*
+combine_reports.py
+RUNS_SERVER/*
+RUNS_SERVER
+run_batches.sh
