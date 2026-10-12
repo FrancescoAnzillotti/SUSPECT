@@ -31,7 +31,7 @@ The C implementation is intentionally split by semantic responsibility rather th
 
 1. **Standardize** every candidate (column mean 0, sd 1). Candidates with zero variance are dropped.
 2. **Kinship matrix** `K = (1/m) · W Wᵀ`, which says how related each pair of samples is.
-3. **Propensity scores**: `p = mean(y) + K (K + δI)⁻¹ (y − mean(y))`. This is the part of the outcome explained by relatedness (the LMM "BLUP"). `δ = 1` and `p` is clipped to `[0.01, 0.99]`.
+3. **Propensity scores**: `p`. This is the part of the outcome explained by relatedness (the LMM "BLUP").
    - Approximate mode solves this with a single Cholesky solve (no eigendecomposition).
    - Exact mode computes the eigendecomposition, because GEMMA needs it.
 4. **Surprise scores** (weights): `1/p` for cases and `1/(1−p)` for controls, normalized within each class.
@@ -194,7 +194,7 @@ The wrapper runs the full dataset first, then every combination of removal perce
 | `--seed` | Seed for choosing the removed samples. |
 | `--reuse` | Pass `--reuse` to the C binary (reuse full-run weights). |
 | `--exact` | Either 0 (approximate mode) or 1 (exact mode). If `--reuse` is set but `--exact` is 1, `--reuse` is ignored|
-| `--no-baseline` | Skips the GEMMA baseline before RAFT execution |
+| `--no-baseline` | Pass `--no-baseline` to the C binary. Skips the GEMMA baseline before RAFT execution |
 | `--saige` | Also run SAIGE (Step 1 + Step 2) on every subset. Needs `-g`. |
 | `--saige-pixi-dir` | Folder with the `pixi.toml` that has SAIGE installed. |
 | `--saige-alpha` | Significance level for the SAIGE Bonferroni threshold (default 0.05). |
