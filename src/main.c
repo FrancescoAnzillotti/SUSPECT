@@ -1,4 +1,4 @@
-#include "raft.h"
+#include "suspect.h"
 
 /* Program entry point and end-to-end workflow. */
 
@@ -91,7 +91,7 @@ int main(int argc, char *argv[]) {
 
 
         snprintf(gemma_cmd1, sizeof(gemma_cmd1), 
-            " cd %s && ../../gemma -g %s -p %s -gk 2 -maf 0 -miss 1 -o kinship > /dev/null 2>&1",
+            " cd %s && ../../gemma -g %s -p %s -gk 2 -maf 0 -miss 1 -o kinship  > /dev/null 2>&1",
             target_dir, matrix_abs, outcome_abs);
         
         snprintf(gemma_cmd2, sizeof(gemma_cmd2), 
@@ -113,7 +113,7 @@ int main(int argc, char *argv[]) {
         }
 
         double t_gemma_end = now_seconds();
-        char **gemma_relevant = read_gemma_relevant_snps(target_dir, gemma_thr, relevant_log_file, 0);
+        gemma_relevant = read_gemma_relevant_snps(target_dir, gemma_thr, relevant_log_file, 0);
         printf("Time taken for full and exact GEMMA execution: %.1f milliseconds\n\n", (t_gemma_end - t0));
         fprintf(time_log_file, "%s\tGEMMA\t%.1f\tms\n", target_dir, (t_gemma_end - t0));
     }
@@ -154,6 +154,17 @@ int main(int argc, char *argv[]) {
 
     data->n_valid_snps = n_valid_snps;
     data->valid_snp_indices = collect_valid_snp_indices_for_GRM(data->snp_keep_mask, data->snp_size, &data->n_valid_snps);
+
+    char exact_folder_path[8192];
+    snprintf(exact_folder_path, sizeof(exact_folder_path), "%s/exact", data->folder_name);
+    if(!is_directory(exact_folder_path))
+    {
+        if(mkdir(exact_folder_path, 0755) != 0)
+        {
+            perror("Failed to create folder for exact run");
+            return -1;
+        }
+    }
 
 
     double *GRM = NULL;

@@ -15,7 +15,7 @@ SRCS = \
 	./src/zscore.c \
 	./src/gemma.c
 
-HDRS = ./src/raft.h
+HDRS = ./src/suspect.h
 
 .PHONY: all clean
 

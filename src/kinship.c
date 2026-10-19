@@ -1,4 +1,4 @@
-#include "raft.h"
+#include "suspect.h"
 #define GRM_BLOCK 1024
 
 /* GRM construction, analyzed submatrices, eigendecomposition, and kinship cache. */
@@ -221,16 +221,6 @@ int compute_eigendecomposition(double *grm, int pruned_sample_size, double *eigv
 
     if(exact)
     {
-        char exact_folder_path[8192];
-        snprintf(exact_folder_path, sizeof(exact_folder_path), "%s/exact", data->folder_name);
-        if(!is_directory(exact_folder_path))
-        {
-            if(mkdir(exact_folder_path, 0755) != 0)
-            {
-                perror("Failed to create folder for exact eigen decomposition");
-                return -1;
-            }
-        }
         write_eigen_decomposition_to_file(grm, eigvals, pruned_sample_size, data->folder_name);
     }
 

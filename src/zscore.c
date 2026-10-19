@@ -1,4 +1,4 @@
-#include "raft.h"
+#include "suspect.h"
 
 /* weighted association score, thresholds, and Z-score output. */
 
@@ -67,19 +67,17 @@ void compute_z_scores(folder_geno_pheno *data, double *surprise_scores, node_z_s
     int count_relevant = 0;
 
     FILE *output_file = NULL;
-    if (exact) 
+
+    write_pruned_pheno_to_file(data);
+
+    char output_path[8192];
+    snprintf(output_path, sizeof(output_path), "%s/exact/C_pruned_geno_matrix.txt", data->folder_name);
+
+    output_file = fopen(output_path, "w");
+    if (output_file == NULL) 
     {
-        write_pruned_pheno_to_file(data);
-
-        char output_path[8192];
-        snprintf(output_path, sizeof(output_path), "%s/exact/C_pruned_geno_matrix.txt", data->folder_name);
-
-        output_file = fopen(output_path, "w");
-        if (output_file == NULL) 
-        {
-            perror("Failed to open exact pruned genotype output file");
-            exit(EXIT_FAILURE);
-        }
+        perror("Failed to open exact pruned genotype output file");
+        exit(EXIT_FAILURE);
     }
 
     int ref_n_samples = 0, ref_n_candidates = 0;
@@ -120,10 +118,7 @@ void compute_z_scores(folder_geno_pheno *data, double *surprise_scores, node_z_s
         if (node->real_z_score > data->adjusted_z_score_threshold) 
         {
             count_relevant++;
-            if (exact) 
-            {
-                write_geno_col_to_file(output_file, data, i, node->snp_name);
-            }
+            write_geno_col_to_file(output_file, data, i, node->snp_name);
         }
     }
 

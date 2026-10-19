@@ -1,22 +1,22 @@
-# RAFT
+# SUSPECT
 
-RAFT is a fast **pre-screening** tool for association testing when samples are related to each other (e.g. GWAS).
+SUSPECT is a fast **pre-screening** tool for association testing when samples are related to each other (e.g. GWAS).
 
-Instead of fitting a Linear Mixed Model (LMM) for every candidate, RAFT computes a cheap weighted Z-score for each one and keeps only the promising candidates. An exact LMM ([GEMMA](https://github.com/genetics-statistics/GEMMA)) can then be run on the survivors only. RAFT is also built for the **subset problem**: when you want to analyze only some of the samples, the expensive work from the full run is reused instead of recomputed.
+Instead of fitting a Linear Mixed Model (LMM) for every candidate, SUSPECT computes a cheap weighted Z-score for each one and keeps only the promising candidates. An exact LMM ([GEMMA](https://github.com/genetics-statistics/GEMMA)) can then be run on the survivors only. SUSPECT is also built for the **subset problem**: when you analyze only some of the samples, the expensive work from the full run is reused instead of recomputed.
 
 This repository contains (.c and .h files are inside the `src` folder):
 
 | File | What it is |
 |---|---|
-| `raft.h` | Shared data structures, constants, and function declarations used by all C modules. |
-| `main.c` | Program entry point and end-to-end RAFT workflow. |
+| `suspect.h` | Shared data structures, constants, and function declarations used by all C modules. |
+| `main.c` | Program entry point and end-to-end SUSPECT workflow. |
 | `time.c` | Monotonic elapsed-time measurement. |
 | `utils.c` | Generic utilities, allocation helpers, linked-list management, and path handling. |
-| `data_io.c` | Outcome/matrix input parsing plus RAFT/GEMMA intermediate-file output and subset metadata (`specs.txt`). |
+| `data_io.c` | Outcome/matrix input parsing plus SUSPECT/GEMMA intermediate-file output and subset metadata (`specs.txt`). |
 | `standardization.c` | Candidate statistics, standardization and validity filtering. |
 | `kinship.c` | Relatedness matrix construction, analyzed submatrices, eigendecomposition, and matrix reuse handling. |
 | `propensity.c` | Outcome propensity transforms, Cholesky/eigendecomposition-based weights, IPW surprise scores, and propensity-cache handling. |
-| `zscore.c` | Weighted association counts, RAFT Z-score calculation, thresholds, and Z-score output. |
+| `zscore.c` | Weighted association counts, SUSPECT Z-score calculation, thresholds, and Z-score output. |
 | `gemma.c` | GEMMA result parsing and matching/false-negative checks. |
 | `run_subsets_saige.py` | Python wrapper that runs the benchmark: full run, then many random sample subsets, optionally against SAIGE. |
 | `Makefile` | Builds all C modules and links them into the `z_score_general` executable. |
@@ -24,7 +24,7 @@ This repository contains (.c and .h files are inside the `src` folder):
 
 ## C source layout
 
-The C implementation is intentionally split by semantic responsibility rather than by individual function size. All modules include the single shared header `raft.h`, which contains the cross-module function declarations.
+The C implementation is intentionally split by semantic responsibility rather than by individual function size. All modules include the single shared header `suspect.h`, which contains the cross-module function declarations.
 
 
 ## How it works
@@ -85,9 +85,9 @@ The C program calls the provided GEMMA binary as `../../gemma` from inside each 
 ```
 .
 ├── gemma                  <- GEMMA binary
-├── z_score_general        <- compiled RAFT
+├── z_score_general        <- compiled SUSPECT
 ├── src/
-│   ├── raft.h                 <- shared declarations/types
+│   ├── suspect.h                 <- shared declarations/types
 │   ├── main.c
 │   ├── time.c 
 │   ├── utils.c
@@ -129,7 +129,7 @@ Values are 0, 1, 2 (dosages in between are rounded) or `NA`.
 
 ## Quick start
 
-### 1. Run RAFT on one dataset
+### 1. Run SUSPECT on one dataset
 
 ```bash
 mkdir -p results/FULL
@@ -146,14 +146,14 @@ Usage:
 | Argument | Meaning |
 |---|---|
 | `<folder>` | Existing folder where outputs go. Relative `-m` / `-o` paths are looked up inside it. |
-| `0` / `1` | `0` = approximate (RAFT alone), `1` = exact (RAFT, then GEMMA on the survivors). |
+| `0` / `1` | `0` = approximate (SUSPECT alone), `1` = exact (SUSPECT, then GEMMA on the survivors). |
 | `-g` | Matrix is in BIMBAM format (two allele columns). |
 | `-2` | Outcome is coded 1/2 instead of 0/1. |
 | `--reuse` | On a subset run, take the weights from the full run instead of recomputing them. |
-| `--no-baseline` | Skips the GEMMA baseline before RAFT execution |
+| `--no-baseline` | Skips the GEMMA baseline before SUSPECT execution |
 
 
-### 2. Run RAFT on a subset by hand
+### 2. Run SUSPECT on a subset by hand
 
 From inside `results/`, link the three reference files into a new folder and pass an outcome file where removed samples are `NA`:
 
@@ -194,7 +194,7 @@ The wrapper runs the full dataset first, then every combination of removal perce
 | `--seed` | Seed for choosing the removed samples. |
 | `--reuse` | Pass `--reuse` to the C binary (reuse full-run weights). |
 | `--exact` | Either 0 (approximate mode) or 1 (exact mode). If `--reuse` is set but `--exact` is 1, `--reuse` is ignored|
-| `--no-baseline` | Pass `--no-baseline` to the C binary. Skips the GEMMA baseline before RAFT execution |
+| `--no-baseline` | Pass `--no-baseline` to the C binary. Skips the GEMMA baseline before SUSPECT execution |
 | `--saige` | Also run SAIGE (Step 1 + Step 2) on every subset. Needs `-g`. |
 | `--saige-pixi-dir` | Folder with the `pixi.toml` that has SAIGE installed. |
 | `--saige-alpha` | Significance level for the SAIGE Bonferroni threshold (default 0.05). |
@@ -223,18 +223,18 @@ Inside each run folder (e.g. `results/FULL`):
 
 Inside the directory where the binary is launched, three logs are generated:
 
-- `relevant_log.csv`: how many candidates RAFT and GEMMA flag
+- `relevant_log.csv`: how many candidates SUSPECT and GEMMA flag
 - `time_log.csv`: running times in milliseconds
-- `fn_log.csv`: candidates GEMMA flags but RAFT discards (false negatives)
+- `fn_log.csv`: candidates GEMMA flags but SUSPECT discards (false negatives)
 
 The wrapper merges everything into **`results/report.csv`** and **`results/report.tsv`**, one row per experiment. The main columns:
 
 | Column | Meaning |
 |---|---|
-| `zscore_retained_percentage` | % of candidates RAFT keeps. |
-| `recall`, `false_negative_rate` | How many of GEMMA's hits RAFT keeps / loses. |
-| `gemma_time_ms`, `zscore_time_ms` | GEMMA alone vs. RAFT alone (approx. or exact). |
-| `zscore_plus_gemma_time_ms` | RAFT followed by GEMMA (exact mode only). |
+| `zscore_retained_percentage` | % of candidates SUSPECT keeps. |
+| `recall`, `false_negative_rate` | How many of GEMMA's hits SUSPECT keeps / loses. |
+| `gemma_time_ms`, `zscore_time_ms` | GEMMA alone vs. SUSPECT alone (approx. or exact). |
+| `zscore_plus_gemma_time_ms` | SUSPECT followed by GEMMA (exact mode only). |
 | `saige_time_ms`, `saige_accuracy` | SAIGE time, and % of GEMMA's hits that SAIGE also flags (with `--saige`). |
 
 ---
@@ -242,4 +242,4 @@ The wrapper merges everything into **`results/report.csv`** and **`results/repor
 ## Notes
 
 - Always start from a clean reference folder. If `specs.txt` already exists in a folder, the program treats it as a subset run. (The wrapper deletes stale reference files for you.)
-- Significance thresholds (both RAFT's Z threshold and the GEMMA `-log10(p)` threshold used for comparison) are set automatically from the number of candidates.
+- Significance thresholds (both SUSPECT's Z threshold and the GEMMA `-log10(p)` threshold used for comparison) are set automatically from the number of candidates.
